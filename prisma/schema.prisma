@@ -1,0 +1,163 @@
+datasource db {
+  provider = "postgresql"
+  
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------------------
+// 1. மாடு மேலாண்மை (Cattle Management)
+// ------------------------------------------------------
+enum CattleType {
+  COW
+  CALF
+}
+
+enum CattleSource {
+  BORN_HERE
+  PURCHASED
+}
+
+model Cattle {
+  id             Int             @id @default(autoincrement())
+  tagName        String          // எ.கா: "லெட்சுமி (#C01)"
+  type           CattleType      @default(COW)
+  breed          String?         // எ.கா: "சிந்து", "ஜெர்சி"
+  birthDate      DateTime?
+  source         CattleSource    @default(BORN_HERE)
+  purchasedDate  DateTime?
+  soldDate       DateTime?
+  kidsCount      Int             @default(0) // ஈன்ற கன்றுகளின் எண்ணிக்கை
+  
+  // தொடர்புகள் (Relations)
+  inseminations  Insemination[]
+  milkLogs       MilkLog[]
+  vaccinations   Vaccination[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+// மாடு பால் உற்பத்தி பதிவு
+model MilkLog {
+  id          Int      @id @default(autoincrement())
+  cattleId    Int
+  cattle      Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+  date        DateTime @default(now())
+  liters      Float    // பால் அளவு (லிட்டரில்)
+  session     String   // "MORNING" அல்லது "EVENING"
+  
+  createdAt   DateTime @default(now())
+}
+
+// ------------------------------------------------------
+// 2. ஆடு மேலாண்மை (Goat Management)
+// ------------------------------------------------------
+enum GoatType {
+  GOAT
+  KUTTY
+}
+
+enum GoatSource {
+  BORN_HERE
+  PURCHASED
+}
+
+model Goat {
+  id             Int             @id @default(autoincrement())
+  tagName        String          // எ.கா: "செம்பளி (#G01)"
+  type           GoatType        @default(GOAT)
+  birthDate      DateTime?
+  source         GoatSource      @default(BORN_HERE)
+  purchasedDate  DateTime?
+  soldDate       DateTime?
+  kidsCount      Int             @default(0) // ஈன்ற குட்டிகள் எண்ணிக்கை
+  
+  // தொடர்புகள் (Relations)
+  inseminations  Insemination[]
+  vaccinations   Vaccination[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+// ------------------------------------------------------
+// 3. சினை ஊசி மேலாண்மை (மாடு: +280 நாட்கள், ஆடு: +150 நாட்கள்)
+// ------------------------------------------------------
+model Insemination {
+  id                    Int       @id @default(autoincrement())
+  inseminationDate      DateTime  // சினை ஊசி போட்ட தேதி
+  expectedDeliveryDate  DateTime  // தானியங்கி ஈனும் தேதி (Auto-Calculated)
+  notes                 String?
+
+  // மாடு அல்லது ஆட்டோடு இணைப்பு (Optional Relations)
+  cattleId              Int?
+  cattle                Cattle?   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+
+  goatId                Int?
+  goat                  Goat?     @relation(fields: [goatId], references: [id], onDelete: Cascade)
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+// ------------------------------------------------------
+// 4. கோழிப் பண்ணை மேலாண்மை (Poultry Batch Management)
+// ------------------------------------------------------
+model PoultryBatch {
+  id                 Int         @id @default(autoincrement())
+  batchName          String      // எ.கா: "Batch #1 - நாட்டுக்கோழி"
+  hatchDate          DateTime    // பொரித்த/வாங்கிய தேதி
+  henType            String      // எ.கா: "நாட்டுக்கோழி", "பிராய்லர்"
+  totalChicks        Int         // ஆரம்பக் குஞ்சுகள் எண்ணிக்கை
+  diedCount          Int         @default(0) // இறப்பு எண்ணிக்கை
+  soldCount          Int         @default(0) // விற்ற எண்ணிக்கை
+
+  // Auto-calculated Schedules
+  day7VaccineDate    DateTime?   // 7-ஆம் நாள் F1/B1
+  day12VaccineDate   DateTime?   // 12-ஆம் நாள் IBD
+  day22VaccineDate   DateTime?   // 22-ஆம் நாள் Lasota Booster
+  beakTrimmingDate   DateTime?   // மூக்கு வெட்டும் நாள்
+  immutonDate        DateTime?   // Immuton மருந்து நாள்
+  bactinilDate       DateTime?   // Bactinil மருந்து நாள்
+
+  sales              PoultrySale[]
+
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
+
+// கோழி விற்பனை & வாடிக்கையாளர் விவரங்கள்
+model PoultrySale {
+  id             Int          @id @default(autoincrement())
+  batchId        Int
+  batch          PoultryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  buyerFirstName String
+  buyerLastName  String
+  buyerAddress   String
+  chicksSold     Int          // விற்ற கோழிகள் எண்ணிக்கை
+  saleDate       DateTime
+  totalAmount    Float        // மொத்த விற்பனைத் தொகை (₹)
+
+  createdAt      DateTime     @default(now())
+}
+
+// ------------------------------------------------------
+// 5. பொதுத் தடுப்பூசி பதிவுகள் (Vaccination Management)
+// ------------------------------------------------------
+model Vaccination {
+  id           Int      @id @default(autoincrement())
+  name         String   // எ.கா: "FMD", "PPR", "ET Vaccine"
+  date         DateTime // தடுப்பூசி போட்ட தேதி
+  description  String?  // குறிப்புகள்
+
+  cattleId     Int?
+  cattle       Cattle?  @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+
+  goatId       Int?
+  goat         Goat?    @relation(fields: [goatId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+}

@@ -1,0 +1,978 @@
+"use client";
+
+import { useState } from "react";
+import { 
+  Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
+  Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
+} from "lucide-react";
+
+// --- TYPES & INTERFACES ---
+interface Insemination {
+  id: number;
+  inseminationDate: string;
+  expectedDeliveryDate: string;
+}
+
+interface Vaccination {
+  id: number;
+  name: string;
+  date: string;
+  description: string;
+}
+
+interface GeneralNote {
+  id: number;
+  date: string;
+  text: string;
+}
+
+interface Cattle {
+  id: number;
+  name: string;
+  type: "COW" | "CALF";
+  photoUrl: string;
+  birthDate: string;
+  source: "BORN_HERE" | "PURCHASED";
+  motherId?: number;
+  inseminations: Insemination[];
+  vaccinations: Vaccination[];
+  notes: GeneralNote[];
+}
+
+const DEFAULT_IMAGE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='150' viewBox='0 0 150 150'><rect width='100%' height='100%' fill='%23e2e8f0'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%2364748b'>No Photo</text></svg>";
+
+export default function CowPage() {
+  const [activeTab, setActiveTab] = useState<"COW" | "CALF">("COW");
+  const [selectedCattle, setSelectedCattle] = useState<Cattle | null>(null);
+  
+  // Modals State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isInseminationModalOpen, setIsInseminationModalOpen] = useState(false);
+  const [isVaccineModalOpen, setIsVaccineModalOpen] = useState(false);
+  const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
+  const [isCalfBirthModalOpen, setIsCalfBirthModalOpen] = useState(false);
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+
+  // Form States
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"COW" | "CALF">("COW");
+  const [newBirthDate, setNewBirthDate] = useState("");
+  const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
+  const [photoBase64, setPhotoBase64] = useState<string>("");
+
+  const [calfName, setCalfName] = useState("");
+  const [calfBirthDate, setCalfBirthDate] = useState(new Date().toISOString().split("T")[0]);
+
+  const [newInsemDate, setNewInsemDate] = useState("");
+  const [editingInsemId, setEditingInsemId] = useState<number | null>(null);
+
+  const [vacName, setVacName] = useState("");
+  const [vacDate, setVacDate] = useState("");
+  const [vacNotes, setVacNotes] = useState("");
+  const [editingVacId, setEditingVacId] = useState<number | null>(null);
+
+  const [noteText, setNoteText] = useState("");
+  const [noteDate, setNoteDate] = useState(new Date().toISOString().split("T")[0]);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+
+  const [removeReason, setRemoveReason] = useState<"SOLD" | "OTHER">("SOLD");
+  const [removeNotes, setRemoveNotes] = useState("");
+
+  const [cattles, setCattles] = useState<Cattle[]>([]);
+
+  // Safe Date parsing
+  function parseLocalDate(dateStr: string) {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  // Calculate Elapsed and Remaining Days
+  function getInseminationDaysInfo(insemDateStr: string) {
+    if (!insemDateStr) return { daysPassed: 0, daysRemaining: 283 };
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const start = parseLocalDate(insemDateStr);
+    start.setHours(0, 0, 0, 0);
+
+    const diffTime = today.getTime() - start.getTime();
+    const daysPassed = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const daysRemaining = 283 - daysPassed;
+
+    return {
+      daysPassed: daysPassed < 0 ? 0 : daysPassed,
+      daysRemaining: daysRemaining < 0 ? 0 : daysRemaining
+    };
+  }
+
+  // Image Upload Handler
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoBase64(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  function calculateDeliveryDate(dateStr: string): string {
+    if (!dateStr) return "";
+    const date = parseLocalDate(dateStr);
+    date.setDate(date.getDate() + 283);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function getMonthlyRedMarks(inseminationDateStr: string) {
+    if (!inseminationDateStr) return [];
+    const marks = [];
+    for (let i = 1; i <= 9; i++) {
+      const nextMonth = parseLocalDate(inseminationDateStr);
+      nextMonth.setDate(nextMonth.getDate() + i * 30);
+      const yyyy = nextMonth.getFullYear();
+      const mm = String(nextMonth.getMonth() + 1).padStart(2, "0");
+      const dd = String(nextMonth.getDate()).padStart(2, "0");
+      marks.push({
+        month: i,
+        date: `${yyyy}-${mm}-${dd}`,
+      });
+    }
+    return marks;
+  }
+
+  const handleConvertToCow = (cattleId: number) => {
+    const updated = cattles.map((item) => {
+      if (item.id === cattleId) return { ...item, type: "COW" as const };
+      return item;
+    });
+    setCattles(updated);
+    if (selectedCattle && selectedCattle.id === cattleId) {
+      setSelectedCattle({ ...selectedCattle, type: "COW" });
+    }
+  };
+
+  const handleRemoveCattle = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCattle) return;
+    const updated = cattles.filter((item) => item.id !== selectedCattle.id);
+    setCattles(updated);
+    setSelectedCattle(null);
+    setIsRemoveModalOpen(false);
+    setRemoveNotes("");
+  };
+
+  const handleAddCattle = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName) return;
+    const today = new Date().toISOString().split("T")[0];
+    const newCattleItem: Cattle = {
+      id: Date.now(),
+      name: newName,
+      type: newType,
+      photoUrl: photoBase64 || DEFAULT_IMAGE,
+      birthDate: newBirthDate || today,
+      source: newSource,
+      inseminations: [],
+      vaccinations: [],
+      notes: [],
+    };
+    setCattles([...cattles, newCattleItem]);
+    setNewName("");
+    setPhotoBase64("");
+    setNewBirthDate("");
+    setIsAddModalOpen(false);
+  };
+
+  const handleCalfBirth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCattle || !calfName) return;
+    const newCalf: Cattle = {
+      id: Date.now(),
+      name: calfName,
+      type: "CALF",
+      photoUrl: DEFAULT_IMAGE,
+      birthDate: calfBirthDate,
+      source: "BORN_HERE",
+      motherId: selectedCattle.id,
+      inseminations: [],
+      vaccinations: [],
+      notes: [],
+    };
+    setCattles((prev) => [...prev, newCalf]);
+    setCalfName("");
+    setCalfBirthDate(new Date().toISOString().split("T")[0]);
+    setIsCalfBirthModalOpen(false);
+  };
+
+  const handleSaveInsemination = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInsemDate || !selectedCattle) return;
+    let updatedInseminations: Insemination[];
+
+    if (editingInsemId) {
+      updatedInseminations = selectedCattle.inseminations.map((insem) => {
+        if (insem.id === editingInsemId) {
+          return {
+            ...insem,
+            inseminationDate: newInsemDate,
+            expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
+          };
+        }
+        return insem;
+      });
+    } else {
+      const newInsem: Insemination = {
+        id: Date.now(),
+        inseminationDate: newInsemDate,
+        expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
+      };
+      updatedInseminations = [newInsem, ...selectedCattle.inseminations];
+    }
+
+    const updatedCattles = cattles.map((c) => {
+      if (c.id === selectedCattle.id) return { ...c, inseminations: updatedInseminations };
+      return c;
+    });
+
+    setCattles(updatedCattles);
+    setSelectedCattle({ ...selectedCattle, inseminations: updatedInseminations });
+    setNewInsemDate("");
+    setEditingInsemId(null);
+    setIsInseminationModalOpen(false);
+  };
+
+  const handleEditInsemination = (insem: Insemination) => {
+    setEditingInsemId(insem.id);
+    setNewInsemDate(insem.inseminationDate);
+    setIsInseminationModalOpen(true);
+  };
+
+  const handleSaveVaccine = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vacName || !vacDate || !selectedCattle) return;
+    let updatedVaccinations: Vaccination[];
+
+    if (editingVacId) {
+      updatedVaccinations = selectedCattle.vaccinations.map((vac) => {
+        if (vac.id === editingVacId) return { ...vac, name: vacName, date: vacDate, description: vacNotes };
+        return vac;
+      });
+    } else {
+      const newVac: Vaccination = {
+        id: Date.now(),
+        name: vacName,
+        date: vacDate,
+        description: vacNotes,
+      };
+      updatedVaccinations = [newVac, ...selectedCattle.vaccinations];
+    }
+
+    const updatedCattles = cattles.map((c) => {
+      if (c.id === selectedCattle.id) return { ...c, vaccinations: updatedVaccinations };
+      return c;
+    });
+
+    setCattles(updatedCattles);
+    setSelectedCattle({ ...selectedCattle, vaccinations: updatedVaccinations });
+    setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null);
+    setIsVaccineModalOpen(false);
+  };
+
+  const handleEditVaccine = (vac: Vaccination) => {
+    setEditingVacId(vac.id);
+    setVacName(vac.name);
+    setVacDate(vac.date);
+    setVacNotes(vac.description);
+    setIsVaccineModalOpen(true);
+  };
+
+  const handleDeleteVaccine = (vacId: number) => {
+    if (!selectedCattle) return;
+    const updatedVaccinations = selectedCattle.vaccinations.filter((vac) => vac.id !== vacId);
+    const updatedCattles = cattles.map((c) => {
+      if (c.id === selectedCattle.id) return { ...c, vaccinations: updatedVaccinations };
+      return c;
+    });
+    setCattles(updatedCattles);
+    setSelectedCattle({ ...selectedCattle, vaccinations: updatedVaccinations });
+  };
+
+  const handleSaveNote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noteText || !selectedCattle) return;
+
+    let updatedNotes: GeneralNote[];
+    if (editingNoteId) {
+      updatedNotes = (selectedCattle.notes || []).map((n) => {
+        if (n.id === editingNoteId) return { ...n, date: noteDate, text: noteText };
+        return n;
+      });
+    } else {
+      const newNoteItem: GeneralNote = {
+        id: Date.now(),
+        date: noteDate,
+        text: noteText,
+      };
+      updatedNotes = [newNoteItem, ...(selectedCattle.notes || [])];
+    }
+
+    const updatedCattles = cattles.map((c) => {
+      if (c.id === selectedCattle.id) return { ...c, notes: updatedNotes };
+      return c;
+    });
+
+    setCattles(updatedCattles);
+    setSelectedCattle({ ...selectedCattle, notes: updatedNotes });
+    setNoteText("");
+    setNoteDate(new Date().toISOString().split("T")[0]);
+    setEditingNoteId(null);
+    setIsNoteModalOpen(false);
+  };
+
+  const handleEditNote = (note: GeneralNote) => {
+    setEditingNoteId(note.id);
+    setNoteDate(note.date);
+    setNoteText(note.text);
+    setIsNoteModalOpen(true);
+  };
+
+  const handleDeleteNote = (noteId: number) => {
+    if (!selectedCattle) return;
+    const updatedNotes = (selectedCattle.notes || []).filter((n) => n.id !== noteId);
+    const updatedCattles = cattles.map((c) => {
+      if (c.id === selectedCattle.id) return { ...c, notes: updatedNotes };
+      return c;
+    });
+    setCattles(updatedCattles);
+    setSelectedCattle({ ...selectedCattle, notes: updatedNotes });
+  };
+
+  const filteredCattles = cattles.filter((item) => item.type === activeTab);
+
+  // Look up mother details for the selected cattle
+  const motherCattle = selectedCattle?.motherId 
+    ? cattles.find((c) => c.id === selectedCattle.motherId) 
+    : null;
+
+  return (
+    <div className="min-h-screen bg-emerald-50/40 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-emerald-900 flex items-center gap-2">
+            <Heart className="w-8 h-8 text-emerald-600 fill-emerald-600"/> மாடுகள் & கன்றுகள் மேலாண்மை
+          </h1>
+          <p className="text-emerald-700 text-sm mt-1">
+            சினை ஊசி கணக்கு (நாட்கள் பதிவு), தடுப்பூசி & மாட்டின் பொதுக் குறிப்புகள்
+          </p>
+        </div>
+
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-medium shadow-md transition-all"
+        >
+          <Plus className="w-5 h-5"/> புதிய விலங்கு சேர்க்க
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="max-w-7xl mx-auto mb-6 flex border-b border-emerald-200">
+        <button
+          onClick={() => { setActiveTab("COW"); setSelectedCattle(null); }}
+          className={`pb-3 px-6 font-bold text-lg transition-all ${
+            activeTab === "COW" ? "border-b-4 border-emerald-600 text-emerald-800" : "text-gray-500 hover:text-emerald-700"
+          }`}
+        >
+          மாடுகள் ({cattles.filter((c) => c.type === "COW").length})
+        </button>
+        <button
+          onClick={() => { setActiveTab("CALF"); setSelectedCattle(null); }}
+          className={`pb-3 px-6 font-bold text-lg transition-all ${
+            activeTab === "CALF" ? "border-b-4 border-emerald-600 text-emerald-800" : "text-gray-500 hover:text-emerald-700"
+          }`}
+        >
+          கன்றுகள் ({cattles.filter((c) => c.type === "CALF").length})
+        </button>
+      </div>
+
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Side: Cattle List */}
+        <div className="lg:col-span-1 space-y-4">
+          {filteredCattles.length > 0 ? (
+            filteredCattles.map((cattle) => (
+              <div
+                key={cattle.id}
+                onClick={() => setSelectedCattle(cattle)}
+                className={`p-4 rounded-2xl bg-white border-2 cursor-pointer transition-all shadow-sm hover:shadow-md flex items-center gap-4 ${
+                  selectedCattle?.id === cattle.id ? "border-emerald-600 ring-2 ring-emerald-200" : "border-gray-100 hover:border-emerald-300"
+                }`}
+              >
+                <img
+                  src={cattle.photoUrl}
+                  alt={cattle.name}
+                  className="w-20 h-20 rounded-xl object-cover border border-emerald-100"
+                />
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg text-emerald-950">{cattle.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">பிறந்த தேதி: {cattle.birthDate}</p>
+                  <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">
+                    {cattle.source === "BORN_HERE" ? "பண்ணையில் பிறந்தவை" : "வாங்கப்பட்டது"}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center bg-white rounded-2xl border border-gray-200 text-gray-400">
+              பதிவுகள் எதுவும் இல்லை. புதிய விலங்கு சேர்க்கவும்.
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Details View */}
+        <div className="lg:col-span-2">
+          {selectedCattle ? (
+            <div className="bg-white rounded-2xl border border-emerald-100 p-6 shadow-sm">
+              <div className="flex flex-wrap justify-between items-center border-b pb-4 mb-6 gap-3">
+                <div>
+                  <h2 className="text-2xl font-bold text-emerald-900">{selectedCattle.name}</h2>
+                  <span className="text-xs text-gray-500">விவரங்கள் மற்றும் அட்டவணை</span>
+                </div>
+                
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedCattle.type === "CALF" && (
+                    <button
+                      onClick={() => handleConvertToCow(selectedCattle.id)}
+                      className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                    >
+                      <ArrowRightLeft className="w-4 h-4"/> மாடாக மாற்று
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setIsRemoveModalOpen(true)}
+                    className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                  >
+                    <Trash2 className="w-4 h-4"/> பட்டியலிலிருந்து நீக்கு
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-2">
+                <div className="flex gap-6 items-center bg-emerald-50/50 p-4 rounded-xl mb-6">
+                  <img src={selectedCattle.photoUrl} alt={selectedCattle.name} className="w-24 h-24 rounded-lg object-cover" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-gray-700">
+                      வகை: <span className="text-emerald-900">{selectedCattle.type === "COW" ? "மாடு" : "கன்று"}</span>
+                    </p>
+                    <p className="text-sm font-semibold text-gray-700">
+                      பிறந்த தேதி: <span className="text-emerald-900">{selectedCattle.birthDate}</span>
+                    </p>
+                    {selectedCattle.type === "CALF" && (
+                      <p className="text-sm font-semibold text-gray-700">
+                        தாயின் பெயர்: <span className="text-emerald-900 font-bold">{motherCattle ? motherCattle.name : "குறிப்பிடப்படவில்லை"}</span>
+                      </p>
+                    )}
+                    <p className="text-sm font-semibold text-gray-700">
+                      மூலம்: <span className="text-emerald-900">{selectedCattle.source === "BORN_HERE" ? "பண்ணையில் பிறந்தவை" : "வாங்கப்பட்ட மாடு"}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Insemination Section */}
+                {selectedCattle.type === "COW" && (
+                  <div className="mb-8">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg text-emerald-900 flex items-center gap-2">
+                        <CalendarIcon className="w-5 h-5 text-emerald-600"/> சினை ஊசி விவரங்கள் & நாட்கள் கணக்கு
+                      </h3>
+                      <button
+                        onClick={() => {
+                          setEditingInsemId(null);
+                          setNewInsemDate("");
+                          setIsInseminationModalOpen(true);
+                        }}
+                        className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-all font-medium"
+                      >
+                        + சினை ஊசி பதிவு சேர்க்க
+                      </button>
+                    </div>
+
+                    {selectedCattle.inseminations.length > 0 ? (
+                      selectedCattle.inseminations.map((insem) => {
+                        const redMarks = getMonthlyRedMarks(insem.inseminationDate);
+                        const daysInfo = getInseminationDaysInfo(insem.inseminationDate);
+                        return (
+                          <div key={insem.id} className="border border-emerald-200 rounded-xl p-4 bg-emerald-50/20 mb-4 relative">
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="grid grid-cols-2 gap-4 flex-1">
+                                <div className="bg-white p-3 rounded-lg border">
+                                  <p className="text-xs text-gray-500">சினை ஊசி போட்ட தேதி</p>
+                                  <p className="font-bold text-emerald-900">{insem.inseminationDate}</p>
+                                </div>
+                                <div className="bg-emerald-100 p-3 rounded-lg border border-emerald-300">
+                                  <p className="text-xs text-emerald-800 font-semibold">எதிர்பார்க்கப்படும் ஈனும் தேதி (+283 நாட்கள்)</p>
+                                  <p className="font-extrabold text-emerald-950 text-lg">{insem.expectedDeliveryDate}</p>
+                                </div>
+                              </div>
+                              
+                              <div className="ml-2 flex flex-col gap-2">
+                                <button
+                                  onClick={() => handleEditInsemination(insem)}
+                                  className="text-xs text-emerald-700 hover:text-emerald-900 flex items-center gap-1 bg-white border border-emerald-200 p-1.5 rounded-lg justify-center"
+                                >
+                                  <Edit className="w-3.5 h-3.5"/> எடிட்
+                                </button>
+                                
+                                <button
+                                  onClick={() => setIsCalfBirthModalOpen(true)}
+                                  className="text-xs bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-800 transition-all font-semibold"
+                                >
+                                  🍼 கன்று பிறந்தது
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Dynamic Days Counter Box */}
+                            <div className="mb-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-3.5 rounded-xl shadow-sm flex items-center justify-around">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-emerald-200"/>
+                                <div>
+                                  <span className="text-[11px] block text-emerald-100">இன்று வரை முடிந்த நாட்கள்</span>
+                                  <span className="text-xl font-extrabold">{daysInfo.daysPassed} நாட்கள்</span>
+                                </div>
+                              </div>
+                              <div className="h-8 w-[1px] bg-emerald-400/40"></div>
+                              <div>
+                                <span className="text-[11px] block text-emerald-100">ஈனுவதற்கு மீதமுள்ள நாட்கள்</span>
+                                <span className="text-xl font-extrabold text-amber-300">{daysInfo.daysRemaining} நாட்கள்</span>
+                              </div>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1">
+                              <ShieldAlert className="w-4 h-4 text-red-500"/> மாதந்தோறும் சினை நிறைவு தேதிகள்:
+                            </h4>
+                            <div className="grid grid-cols-3 gap-2">
+                              {redMarks.map((mark) => (
+                                <div key={mark.month} className="p-2 bg-red-50 border border-red-200 rounded-lg text-center">
+                                  <span className="text-[10px] text-red-600 font-bold block">{mark.month}-ஆம் மாதம்</span>
+                                  <span className="text-xs font-bold text-red-900">{mark.date}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-gray-500 italic">சினை ஊசி தகவல்கள் எதுவும் பதிவு செய்யப்படவில்லை.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Vaccine Notes Section */}
+                <div className="mb-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-emerald-900 flex items-center gap-2">
+                      <Syringe className="w-5 h-5 text-emerald-600"/> தடுப்பூசி அட்டவணை
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setEditingVacId(null);
+                        setVacName(""); setVacDate(""); setVacNotes("");
+                        setIsVaccineModalOpen(true);
+                      }}
+                      className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5"/> தடுப்பூசி சேர்க்க
+                    </button>
+                  </div>
+
+                  {selectedCattle.vaccinations.length > 0 ? (
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-emerald-100/60 text-emerald-900 font-bold">
+                          <tr>
+                            <th className="p-3">தடுப்பூசி பெயர்</th>
+                            <th className="p-3">தேதி</th>
+                            <th className="p-3">குறிப்புகள்</th>
+                            <th className="p-3 text-right">செயல்கள்</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {selectedCattle.vaccinations.map((vac) => (
+                            <tr key={vac.id} className="hover:bg-gray-50/50">
+                              <td className="p-3 font-semibold text-gray-800">{vac.name}</td>
+                              <td className="p-3 text-gray-600">{vac.date}</td>
+                              <td className="p-3 text-gray-500">{vac.description || "-"}</td>
+                              <td className="p-3 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => handleEditVaccine(vac)}
+                                    className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg border border-emerald-200"
+                                  >
+                                    <Edit className="w-4 h-4"/>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteVaccine(vac.id)}
+                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg border border-red-200"
+                                  >
+                                    <Trash2 className="w-4 h-4"/>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">தடுப்பூசி பதிவுகள் எதுவுமில்லை.</p>
+                  )}
+                </div>
+
+                {/* General Cow Notes Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-emerald-900 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-emerald-600"/> மாட்டின் பொதுக் குறிப்புகள் (Notes)
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setEditingNoteId(null);
+                        setNoteText("");
+                        setNoteDate(new Date().toISOString().split("T")[0]);
+                        setIsNoteModalOpen(true);
+                      }}
+                      className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5"/> புதிய குறிப்பு சேர்க்க
+                    </button>
+                  </div>
+
+                  {(selectedCattle.notes && selectedCattle.notes.length > 0) ? (
+                    <div className="space-y-3">
+                      {selectedCattle.notes.map((note) => (
+                        <div key={note.id} className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl flex justify-between items-start">
+                          <div>
+                            <span className="text-xs font-bold text-amber-800 block mb-1">{note.date}</span>
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.text}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleEditNote(note)}
+                              className="p-1 text-emerald-700 hover:bg-emerald-100/60 rounded-md"
+                              title="குறிப்பை மாற்றுக"
+                            >
+                              <Edit className="w-4 h-4"/>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteNote(note.id)}
+                              className="p-1 text-red-600 hover:bg-red-100/60 rounded-md"
+                              title="நீக்குக"
+                            >
+                              <Trash2 className="w-4 h-4"/>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">பொதுக் குறிப்புகள் எதுவும் பதிவு செய்யப்படவில்லை.</p>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-12 text-center text-gray-400">
+              <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300"/>
+              <p className="font-medium">விவரங்களைப் பார்க்க இடதுபக்கத்தில் உள்ள மாடு அல்லது கன்றைத் தேர்வு செய்யவும்.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal: Add or Edit Note */}
+      {isNoteModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-emerald-950">
+                {editingNoteId ? "குறிப்பினை திருத்துக (Edit Note)" : "மாட்டின் குறிப்பு சேர்க்க"}
+              </h3>
+              <button onClick={() => setIsNoteModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleSaveNote} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">தேதி</label>
+                <input
+                  type="date"
+                  required
+                  value={noteDate}
+                  onChange={(e) => setNoteDate(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">குறிப்புகள் (Notes)</label>
+                <textarea
+                  required
+                  placeholder="எ.கா: பால் அளவு, மருத்துவ சிகிச்சை விவரங்கள்..."
+                  rows={4}
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                {editingNoteId ? "மாற்றத்தைப் புதுப்பி" : "குறிப்பைச் சேமி"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Cattle */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-emerald-950">புதிய விலங்கு சேர்க்க</h3>
+              <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleAddCattle} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">பெயர் / Tag No</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="எ.கா: லட்சுமி (#02)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">புகைப்படம் தேர்வு செய்க (Gallery)</label>
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
+                    <Upload className="w-4 h-4 text-emerald-700"/>
+                    <span className="text-xs text-emerald-800 font-semibold">படத்தை பதிவேற்றவும்</span>
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  </label>
+                  {photoBase64 && (
+                    <img src={photoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">வகை</label>
+                  <select
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value as "COW" | "CALF")}
+                    className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                  >
+                    <option value="COW">மாடு</option>
+                    <option value="CALF">கன்று</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">மூலம்</label>
+                  <select
+                    value={newSource}
+                    onChange={(e) => setNewSource(e.target.value as "BORN_HERE" | "PURCHASED")}
+                    className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                  >
+                    <option value="BORN_HERE">பண்ணையில் பிறந்தவை</option>
+                    <option value="PURCHASED">வாங்கப்பட்டது</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">பிறந்த தேதி</label>
+                <input
+                  type="date"
+                  value={newBirthDate}
+                  onChange={(e) => setNewBirthDate(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm"
+                />
+              </div>
+              <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                சேமிக்க
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Calf Birth */}
+      {isCalfBirthModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-emerald-950">புதிய கன்றுக் குட்டி பதிவு</h3>
+              <button onClick={() => setIsCalfBirthModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleCalfBirth} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">கன்றின் பெயர் / Tag No</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="எ.கா: சின்ன லட்சுமி"
+                  value={calfName}
+                  onChange={(e) => setCalfName(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">பிறந்த தேதி</label>
+                <input
+                  type="date"
+                  value={calfBirthDate}
+                  onChange={(e) => setCalfBirthDate(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm"
+                />
+              </div>
+              <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                கன்றுகள் பட்டியலில் சேர்க்கவும்
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add or Edit Insemination */}
+      {isInseminationModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-emerald-950">
+                {editingInsemId ? "சினை ஊசி தேதியை மாற்று" : "சினை ஊசி பதிவு சேர்க்க"}
+              </h3>
+              <button onClick={() => setIsInseminationModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleSaveInsemination} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {editingInsemId ? "புதிய சினை ஊசி போட்ட தேதி" : "சினை ஊசி போட்ட தேதி"}
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newInsemDate}
+                  onChange={(e) => setNewInsemDate(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm"
+                />
+              </div>
+              {newInsemDate && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <p className="text-xs text-emerald-800 font-semibold">புதிய ஈனும் தேதி (+283 நாட்கள்):</p>
+                  <p className="font-extrabold text-emerald-950 text-base">{calculateDeliveryDate(newInsemDate)}</p>
+                </div>
+              )}
+              <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                {editingInsemId ? "தேதியை புதுப்பி" : "பதிவு செய்"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add or Edit Vaccine */}
+      {isVaccineModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-emerald-950">
+                {editingVacId ? "தடுப்பூசி விபரங்களை மாற்று" : "தடுப்பூசி குறிப்பு சேர்க்க"}
+              </h3>
+              <button onClick={() => setIsVaccineModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleSaveVaccine} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">தடுப்பூசி பெயர்</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="எ.கா: கோமாரி தடுப்பூசி (FMD)"
+                  value={vacName}
+                  onChange={(e) => setVacName(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">போடப்பட்ட தேதி</label>
+                <input
+                  type="date"
+                  required
+                  value={vacDate}
+                  onChange={(e) => setVacDate(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">குறிப்புகள்</label>
+                <textarea
+                  placeholder="கூடுதல் தகவல்கள்..."
+                  rows={3}
+                  value={vacNotes}
+                  onChange={(e) => setVacNotes(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                {editingVacId ? "மாற்றங்களைப் புதுப்பி" : "குறிப்பு சேர்க்கவும்"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Remove Cattle */}
+      {isRemoveModalOpen && selectedCattle && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-bold text-red-950">{selectedCattle.name} - நீக்கம் செய்க</h3>
+              <button onClick={() => setIsRemoveModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+            </div>
+            <form onSubmit={handleRemoveCattle} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">காரணம்</label>
+                <select
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value as "SOLD" | "OTHER")}
+                  className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                >
+                  <option value="SOLD">விற்பனை செய்யப்பட்டது</option>
+                  <option value="OTHER">மற்றவை</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">குறிப்பு</label>
+                <textarea
+                  placeholder="கூடுதல் விவரங்கள்..."
+                  rows={3}
+                  value={removeNotes}
+                  onChange={(e) => setRemoveNotes(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-red-600"
+                />
+              </div>
+              <button type="submit" className="w-full bg-red-600 text-white font-bold py-3 rounded-xl text-sm hover:bg-red-700 transition-all">
+                உறுதியாக நீக்குக
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
