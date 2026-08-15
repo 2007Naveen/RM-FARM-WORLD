@@ -6,57 +6,61 @@ import { Clock, CalendarPlus } from "lucide-react";
 export default function DateCalculator() {
   const [mode, setMode] = useState<"add" | "diff">("add");
 
-  // Mode 1: Add Days States
   const [baseDate, setBaseDate] = useState("");
-  const [daysToAdd, setDaysToAdd] = useState<number | "">("");
+  const [daysToAdd, setDaysToAdd] = useState<string>("");
   const [futureResult, setFutureResult] = useState<{ dateStr: string; tamilStr: string } | null>(null);
 
-  // Mode 2: Difference States
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [diffResult, setDiffResult] = useState<string | null>(null);
 
   const calculateFutureDate = () => {
-    if (!baseDate || daysToAdd === "") return;
-    const [y, m, d] = baseDate.split("-").map(Number);
-    const resultDate = new Date(y, m - 1, d);
-    resultDate.setDate(resultDate.getDate() + Number(daysToAdd));
+    if (!baseDate || !daysToAdd) return;
 
-    const resYyyy = resultDate.getFullYear();
-    const resMm = String(resultDate.getMonth() + 1).padStart(2, "0");
-    const resDd = String(resultDate.getDate()).padStart(2, "0");
+    // Split manually to avoid UTC conversion bugs
+    const [year, month, day] = baseDate.split("-").map(Number);
+    const dateObj = new Date(year, month - 1, day);
+    dateObj.setDate(dateObj.getDate() + parseInt(daysToAdd, 10));
 
-    const tamilFormatted = resultDate.toLocaleDateString("ta-IN", {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const dd = String(dateObj.getDate()).padStart(2, "0");
+
+    const tamilFormatted = dateObj.toLocaleDateString("ta-IN", {
       day: "numeric",
       month: "long",
       year: "numeric",
-      weekday: "long"
+      weekday: "long",
     });
 
+    // Force UI State Update
     setFutureResult({
-      dateStr: `${resYyyy}-${resMm}-${resDd}`,
+      dateStr: `${yyyy}-${mm}-${dd}`,
       tamilStr: tamilFormatted,
     });
   };
 
   const calculateDiff = () => {
     if (!startDate || !endDate) return;
+
     const [sY, sM, sD] = startDate.split("-").map(Number);
     const [eY, eM, eD] = endDate.split("-").map(Number);
 
     const start = new Date(sY, sM - 1, sD);
     const end = new Date(eY, eM - 1, eD);
 
-    const days = Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const m = Math.floor(days / 30);
-    const r = days % 30;
-    setDiffResult(`${days} நாட்கள் (${m} மாதம் ${r} நாட்கள்)`);
+    const totalDays = Math.round(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const m = Math.floor(totalDays / 30);
+    const r = totalDays % 30;
+
+    setDiffResult(`${totalDays} நாட்கள் (${m} மாதம் ${r} நாட்கள்)`);
   };
 
   return (
     <div className="bg-white border border-stone-200 rounded-3xl p-5 shadow-sm max-w-md">
       <div className="flex gap-2 mb-4 bg-stone-100 p-1 rounded-xl">
         <button
+          type="button"
           onClick={() => setMode("add")}
           className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
             mode === "add" ? "bg-white text-emerald-800 shadow-sm" : "text-stone-600"
@@ -65,6 +69,7 @@ export default function DateCalculator() {
           + நாட்கள் கூட்டி தேதி
         </button>
         <button
+          type="button"
           onClick={() => setMode("diff")}
           className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${
             mode === "diff" ? "bg-white text-emerald-800 shadow-sm" : "text-stone-600"
@@ -89,18 +94,19 @@ export default function DateCalculator() {
             />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-stone-500 block mb-1">எத்தனை நாட்கள் கூட்ட வேண்டும்?</label>
+            <label className="text-[10px] font-bold text-stone-500 block mb-1">கூட்ட வேண்டிய நாட்கள்</label>
             <input
               type="number"
               placeholder="எ.கா: 150"
               value={daysToAdd}
-              onChange={(e) => setDaysToAdd(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => setDaysToAdd(e.target.value)}
               className="w-full border rounded-xl p-2.5 text-xs outline-none focus:border-emerald-600"
             />
           </div>
           <button
+            type="button"
             onClick={calculateFutureDate}
-            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2.5 rounded-xl font-bold"
+            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2.5 rounded-xl font-bold active:scale-95 transition-all"
           >
             தேதியைக் கணக்கிடு
           </button>
@@ -138,8 +144,9 @@ export default function DateCalculator() {
             </div>
           </div>
           <button
+            type="button"
             onClick={calculateDiff}
-            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2.5 rounded-xl font-bold"
+            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2.5 rounded-xl font-bold active:scale-95 transition-all"
           >
             கணக்கிடு
           </button>
