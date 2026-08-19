@@ -411,7 +411,7 @@ function PoultryPage() {
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-amber-900 flex items-center gap-2">
-            <Heart className="w-8 h-8 text-amber-600 fill-amber-600"/> நாட்டுக்கோழி & குஞ்சுகள் மேலாண்மை
+            <Heart className="w-8 h-8 text-amber-600 fill-amber-600"/> கோழிகள் மேலாண்மை
           </h1>
           <p className="text-amber-700 text-sm mt-1">
             அடைகாத்தல் கணக்கு (23 நாட்கள்), தடுப்பூசி & கோழிக்குஞ்சுகள் (Amma Koli Name) பதிவு
