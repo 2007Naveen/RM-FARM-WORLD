@@ -1,10 +1,14 @@
-"use client";
+'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from 'react';
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
-} from "lucide-react";
+} from 'lucide-react';
+import { 
+  getCattle, addCattle, addInsemination, addVaccination, 
+  addNote, updateCattleType, deleteCattle 
+} from '@/app/actions/cowActions';
 
 // --- TYPES & INTERFACES ---
 interface Insemination {
@@ -30,7 +34,7 @@ interface Cattle {
   id: number;
   name: string;
   type: "COW" | "CALF";
-  photoUrl: string;
+  photoUrl?: string;
   birthDate: string;
   source: "BORN_HERE" | "PURCHASED";
   motherId?: number;
@@ -44,7 +48,9 @@ const DEFAULT_IMAGE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/200
 export default function CowPage() {
   const [activeTab, setActiveTab] = useState<"COW" | "CALF">("COW");
   const [selectedCattle, setSelectedCattle] = useState<Cattle | null>(null);
-  
+  const [cattles, setCattles] = useState<Cattle[]>([]);
+  const [loading, setLoading] = useState(true);
+
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isInseminationModalOpen, setIsInseminationModalOpen] = useState(false);
@@ -78,16 +84,55 @@ export default function CowPage() {
   const [removeReason, setRemoveReason] = useState<"SOLD" | "OTHER">("SOLD");
   const [removeNotes, setRemoveNotes] = useState("");
 
-  const [cattles, setCattles] = useState<Cattle[]>([]);
+  // Load Data on Mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const data = (await getCattle()) as unknown as Cattle[];
+      const cattleList = data || [];
+
+      setCattles(cattleList);
+
+      setSelectedCattle((prevSelected) => {
+        if (!prevSelected) return null;
+        return cattleList.find((c) => c.id === prevSelected.id) || null;
+      });
+    } catch (error) {
+      console.error("Error loading cattle data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Safe Date parsing
-  function parseLocalDate(dateStr: string) {
-    const [year, month, day] = dateStr.split("-").map(Number);
-    return new Date(year, month - 1, day);
+  function parseLocalDate(dateValue: string | Date | number) {
+    if (!dateValue) return new Date();
+
+    if (dateValue instanceof Date) {
+      return new Date(dateValue.getTime());
+    }
+
+    if (typeof dateValue === "number") {
+      return new Date(dateValue);
+    }
+
+    const datePart = dateValue.slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (match) {
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+
+    const parsedDate = new Date(dateValue);
+    return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
   }
 
   // Calculate Elapsed and Remaining Days
-  function getInseminationDaysInfo(insemDateStr: string) {
+  function getInseminationDaysInfo(insemDateStr: string | Date | number) {
     if (!insemDateStr) return { daysPassed: 0, daysRemaining: 283 };
     
     const today = new Date();
@@ -118,7 +163,7 @@ export default function CowPage() {
     }
   };
 
-  function calculateDeliveryDate(dateStr: string): string {
+  function calculateDeliveryDate(dateStr: string | Date | number): string {
     if (!dateStr) return "";
     const date = parseLocalDate(dateStr);
     date.setDate(date.getDate() + 283);
@@ -128,7 +173,7 @@ export default function CowPage() {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  function getMonthlyRedMarks(inseminationDateStr: string) {
+  function getMonthlyRedMarks(inseminationDateStr: string | Date | number) {
     if (!inseminationDateStr) return [];
     const marks = [];
     for (let i = 1; i <= 9; i++) {
@@ -145,105 +190,89 @@ export default function CowPage() {
     return marks;
   }
 
-  const handleConvertToCow = (cattleId: number) => {
-    const updated = cattles.map((item) => {
-      if (item.id === cattleId) return { ...item, type: "COW" as const };
-      return item;
-    });
-    setCattles(updated);
-    if (selectedCattle && selectedCattle.id === cattleId) {
-      setSelectedCattle({ ...selectedCattle, type: "COW" });
+  const handleConvertToCow = async (cattleId: number) => {
+    try {
+      await updateCattleType(cattleId, "COW");
+      await loadData();
+    } catch (error) {
+      console.error("Error converting calf to cow:", error);
     }
   };
 
-  const handleRemoveCattle = (e: React.FormEvent) => {
+  const handleRemoveCattle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCattle) return;
-    const updated = cattles.filter((item) => item.id !== selectedCattle.id);
-    setCattles(updated);
-    setSelectedCattle(null);
-    setIsRemoveModalOpen(false);
-    setRemoveNotes("");
+    try {
+      await deleteCattle(selectedCattle.id);
+      setSelectedCattle(null);
+      setIsRemoveModalOpen(false);
+      setRemoveNotes("");
+      await loadData();
+    } catch (error) {
+      console.error("Error removing cattle:", error);
+    }
   };
 
-  const handleAddCattle = (e: React.FormEvent) => {
+  const handleAddCattle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
     const today = new Date().toISOString().split("T")[0];
-    const newCattleItem: Cattle = {
-      id: Date.now(),
-      name: newName,
-      type: newType,
-      photoUrl: photoBase64 || DEFAULT_IMAGE,
-      birthDate: newBirthDate || today,
-      source: newSource,
-      inseminations: [],
-      vaccinations: [],
-      notes: [],
-    };
-    setCattles([...cattles, newCattleItem]);
-    setNewName("");
-    setPhotoBase64("");
-    setNewBirthDate("");
-    setIsAddModalOpen(false);
+    
+    try {
+      await addCattle({
+        name: newName,
+        type: newType,
+        birthDate: newBirthDate || today,
+        source: newSource,
+        photoUrl: photoBase64 || undefined
+      });
+
+      setNewName("");
+      setPhotoBase64("");
+      setNewBirthDate("");
+      setIsAddModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error adding cattle:", error);
+    }
   };
 
-  const handleCalfBirth = (e: React.FormEvent) => {
+  const handleCalfBirth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCattle || !calfName) return;
-    const newCalf: Cattle = {
-      id: Date.now(),
-      name: calfName,
-      type: "CALF",
-      photoUrl: DEFAULT_IMAGE,
-      birthDate: calfBirthDate,
-      source: "BORN_HERE",
-      motherId: selectedCattle.id,
-      inseminations: [],
-      vaccinations: [],
-      notes: [],
-    };
-    setCattles((prev) => [...prev, newCalf]);
-    setCalfName("");
-    setCalfBirthDate(new Date().toISOString().split("T")[0]);
-    setIsCalfBirthModalOpen(false);
+
+    try {
+      await addCattle({
+        name: calfName,
+        type: "CALF",
+        birthDate: calfBirthDate,
+        source: "BORN_HERE",
+        motherId: selectedCattle.id
+      });
+
+      setCalfName("");
+      setCalfBirthDate(new Date().toISOString().split("T")[0]);
+      setIsCalfBirthModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error adding calf birth:", error);
+    }
   };
 
-  const handleSaveInsemination = (e: React.FormEvent) => {
+  const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedCattle) return;
-    let updatedInseminations: Insemination[];
 
-    if (editingInsemId) {
-      updatedInseminations = selectedCattle.inseminations.map((insem) => {
-        if (insem.id === editingInsemId) {
-          return {
-            ...insem,
-            inseminationDate: newInsemDate,
-            expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
-          };
-        }
-        return insem;
-      });
-    } else {
-      const newInsem: Insemination = {
-        id: Date.now(),
-        inseminationDate: newInsemDate,
-        expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
-      };
-      updatedInseminations = [newInsem, ...selectedCattle.inseminations];
+    try {
+      await addInsemination(selectedCattle.id, newInsemDate);
+
+      setNewInsemDate("");
+      setEditingInsemId(null);
+      setIsInseminationModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error saving insemination:", error);
     }
-
-    const updatedCattles = cattles.map((c) => {
-      if (c.id === selectedCattle.id) return { ...c, inseminations: updatedInseminations };
-      return c;
-    });
-
-    setCattles(updatedCattles);
-    setSelectedCattle({ ...selectedCattle, inseminations: updatedInseminations });
-    setNewInsemDate("");
-    setEditingInsemId(null);
-    setIsInseminationModalOpen(false);
   };
 
   const handleEditInsemination = (insem: Insemination) => {
@@ -252,48 +281,35 @@ export default function CowPage() {
     setIsInseminationModalOpen(true);
   };
 
-  const handleSaveVaccine = (e: React.FormEvent) => {
+  const handleSaveVaccine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacName || !vacDate || !selectedCattle) return;
-    let updatedVaccinations: Vaccination[];
 
-    if (editingVacId) {
-      updatedVaccinations = selectedCattle.vaccinations.map((vac) => {
-        if (vac.id === editingVacId) return { ...vac, name: vacName, date: vacDate, description: vacNotes };
-        return vac;
-      });
-    } else {
-      const newVac: Vaccination = {
-        id: Date.now(),
-        name: vacName,
-        date: vacDate,
-        description: vacNotes,
-      };
-      updatedVaccinations = [newVac, ...selectedCattle.vaccinations];
+    try {
+      await addVaccination(selectedCattle.id, vacName, vacDate, vacNotes);
+
+      setVacName(""); 
+      setVacDate(""); 
+      setVacNotes(""); 
+      setEditingVacId(null);
+      setIsVaccineModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error saving vaccine:", error);
     }
-
-    const updatedCattles = cattles.map((c) => {
-      if (c.id === selectedCattle.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-
-    setCattles(updatedCattles);
-    setSelectedCattle({ ...selectedCattle, vaccinations: updatedVaccinations });
-    setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null);
-    setIsVaccineModalOpen(false);
   };
 
   const handleEditVaccine = (vac: Vaccination) => {
     setEditingVacId(vac.id);
     setVacName(vac.name);
     setVacDate(vac.date);
-    setVacNotes(vac.description);
+    setVacNotes(vac.description || "");
     setIsVaccineModalOpen(true);
   };
 
   const handleDeleteVaccine = (vacId: number) => {
     if (!selectedCattle) return;
-    const updatedVaccinations = selectedCattle.vaccinations.filter((vac) => vac.id !== vacId);
+    const updatedVaccinations = (selectedCattle.vaccinations || []).filter((vac) => vac.id !== vacId);
     const updatedCattles = cattles.map((c) => {
       if (c.id === selectedCattle.id) return { ...c, vaccinations: updatedVaccinations };
       return c;
@@ -302,36 +318,21 @@ export default function CowPage() {
     setSelectedCattle({ ...selectedCattle, vaccinations: updatedVaccinations });
   };
 
-  const handleSaveNote = (e: React.FormEvent) => {
+  const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteText || !selectedCattle) return;
 
-    let updatedNotes: GeneralNote[];
-    if (editingNoteId) {
-      updatedNotes = (selectedCattle.notes || []).map((n) => {
-        if (n.id === editingNoteId) return { ...n, date: noteDate, text: noteText };
-        return n;
-      });
-    } else {
-      const newNoteItem: GeneralNote = {
-        id: Date.now(),
-        date: noteDate,
-        text: noteText,
-      };
-      updatedNotes = [newNoteItem, ...(selectedCattle.notes || [])];
+    try {
+      await addNote(selectedCattle.id, noteDate, noteText);
+
+      setNoteText("");
+      setNoteDate(new Date().toISOString().split("T")[0]);
+      setEditingNoteId(null);
+      setIsNoteModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error saving note:", error);
     }
-
-    const updatedCattles = cattles.map((c) => {
-      if (c.id === selectedCattle.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-
-    setCattles(updatedCattles);
-    setSelectedCattle({ ...selectedCattle, notes: updatedNotes });
-    setNoteText("");
-    setNoteDate(new Date().toISOString().split("T")[0]);
-    setEditingNoteId(null);
-    setIsNoteModalOpen(false);
   };
 
   const handleEditNote = (note: GeneralNote) => {
@@ -354,7 +355,6 @@ export default function CowPage() {
 
   const filteredCattles = cattles.filter((item) => item.type === activeTab);
 
-  // Look up mother details for the selected cattle
   const motherCattle = selectedCattle?.motherId 
     ? cattles.find((c) => c.id === selectedCattle.motherId) 
     : null;
@@ -402,7 +402,9 @@ export default function CowPage() {
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Side: Cattle List */}
         <div className="lg:col-span-1 space-y-4">
-          {filteredCattles.length > 0 ? (
+          {loading ? (
+            <p className="text-center p-8 text-emerald-800 font-semibold">ஏற்றப்படுகிறது...</p>
+          ) : filteredCattles.length > 0 ? (
             filteredCattles.map((cattle) => (
               <div
                 key={cattle.id}
@@ -412,13 +414,13 @@ export default function CowPage() {
                 }`}
               >
                 <img
-                  src={cattle.photoUrl}
+                  src={cattle.photoUrl || DEFAULT_IMAGE}
                   alt={cattle.name}
                   className="w-20 h-20 rounded-xl object-cover border border-emerald-100"
                 />
                 <div className="flex-1">
                   <h3 className="font-bold text-lg text-emerald-950">{cattle.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">பிறந்த தேதி: {cattle.birthDate}</p>
+                  <p className="text-xs text-gray-500 mt-1">பிறந்த தேதி: {cattle.birthDate ? new Date(cattle.birthDate).toLocaleDateString() : "-"}</p>
                   <span className="inline-block mt-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">
                     {cattle.source === "BORN_HERE" ? "பண்ணையில் பிறந்தவை" : "வாங்கப்பட்டது"}
                   </span>
@@ -463,13 +465,13 @@ export default function CowPage() {
 
               <div className="p-2">
                 <div className="flex gap-6 items-center bg-emerald-50/50 p-4 rounded-xl mb-6">
-                  <img src={selectedCattle.photoUrl} alt={selectedCattle.name} className="w-24 h-24 rounded-lg object-cover" />
+                  <img src={selectedCattle.photoUrl || DEFAULT_IMAGE} alt={selectedCattle.name} className="w-24 h-24 rounded-lg object-cover" />
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-gray-700">
                       வகை: <span className="text-emerald-900">{selectedCattle.type === "COW" ? "மாடு" : "கன்று"}</span>
                     </p>
                     <p className="text-sm font-semibold text-gray-700">
-                      பிறந்த தேதி: <span className="text-emerald-900">{selectedCattle.birthDate}</span>
+                      பிறந்த தேதி: <span className="text-emerald-900">{selectedCattle.birthDate ? new Date(selectedCattle.birthDate).toLocaleDateString() : "-"}</span>
                     </p>
                     {selectedCattle.type === "CALF" && (
                       <p className="text-sm font-semibold text-gray-700">
@@ -501,7 +503,7 @@ export default function CowPage() {
                       </button>
                     </div>
 
-                    {selectedCattle.inseminations.length > 0 ? (
+                    {selectedCattle.inseminations && selectedCattle.inseminations.length > 0 ? (
                       selectedCattle.inseminations.map((insem) => {
                         const redMarks = getMonthlyRedMarks(insem.inseminationDate);
                         const daysInfo = getInseminationDaysInfo(insem.inseminationDate);
@@ -511,11 +513,11 @@ export default function CowPage() {
                               <div className="grid grid-cols-2 gap-4 flex-1">
                                 <div className="bg-white p-3 rounded-lg border">
                                   <p className="text-xs text-gray-500">சினை ஊசி போட்ட தேதி</p>
-                                  <p className="font-bold text-emerald-900">{insem.inseminationDate}</p>
+                                  <p className="font-bold text-emerald-900">{new Date(insem.inseminationDate).toLocaleDateString()}</p>
                                 </div>
                                 <div className="bg-emerald-100 p-3 rounded-lg border border-emerald-300">
                                   <p className="text-xs text-emerald-800 font-semibold">எதிர்பார்க்கப்படும் ஈனும் தேதி (+283 நாட்கள்)</p>
-                                  <p className="font-extrabold text-emerald-950 text-lg">{insem.expectedDeliveryDate}</p>
+                                  <p className="font-extrabold text-emerald-950 text-lg">{new Date(insem.expectedDeliveryDate).toLocaleDateString()}</p>
                                 </div>
                               </div>
                               
@@ -590,7 +592,7 @@ export default function CowPage() {
                     </button>
                   </div>
 
-                  {selectedCattle.vaccinations.length > 0 ? (
+                  {selectedCattle.vaccinations && selectedCattle.vaccinations.length > 0 ? (
                     <div className="border rounded-xl overflow-hidden">
                       <table className="w-full text-left text-sm">
                         <thead className="bg-emerald-100/60 text-emerald-900 font-bold">
@@ -605,7 +607,7 @@ export default function CowPage() {
                           {selectedCattle.vaccinations.map((vac) => (
                             <tr key={vac.id} className="hover:bg-gray-50/50">
                               <td className="p-3 font-semibold text-gray-800">{vac.name}</td>
-                              <td className="p-3 text-gray-600">{vac.date}</td>
+                              <td className="p-3 text-gray-600">{new Date(vac.date).toLocaleDateString()}</td>
                               <td className="p-3 text-gray-500">{vac.description || "-"}</td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -657,7 +659,7 @@ export default function CowPage() {
                       {selectedCattle.notes.map((note) => (
                         <div key={note.id} className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-bold text-amber-800 block mb-1">{note.date}</span>
+                            <span className="text-xs font-bold text-amber-800 block mb-1">{new Date(note.date).toLocaleDateString()}</span>
                             <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.text}</p>
                           </div>
                           <div className="flex items-center gap-1.5">

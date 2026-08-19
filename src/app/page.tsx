@@ -272,8 +272,7 @@ export default function HomePage() {
               <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
                 <CalendarIcon className="w-6 h-6 text-emerald-600" /> தமிழ் நாட்காட்டி
               </h2>
-              <button
-                type="button"
+              <button type="button"
                 onClick={resetToToday}
                 className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all"
               >

@@ -86,13 +86,30 @@ function GoatPage() {
   const [goats, setGoats] = useState<Goat[]>([]);
 
   // Safe Date parsing
-  function parseLocalDate(dateStr: string) {
-    const [year, month, day] = dateStr.split("-").map(Number);
-    return new Date(year, month - 1, day);
+  function parseLocalDate(dateValue: string | Date | number | null | undefined) {
+    if (!dateValue) return new Date();
+
+    if (dateValue instanceof Date) {
+      return new Date(dateValue.getTime());
+    }
+
+    if (typeof dateValue === "number") {
+      return new Date(dateValue);
+    }
+
+    const datePart = dateValue.slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (match) {
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+
+    const parsedDate = new Date(dateValue);
+    return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
   }
 
   // Calculate Elapsed and Remaining Days (Goat gestation is ~150 days)
-  function getInseminationDaysInfo(insemDateStr: string) {
+  function getInseminationDaysInfo(insemDateStr: string | Date | number | null | undefined) {
     if (!insemDateStr) return { daysPassed: 0, daysRemaining: 150 };
     
     const today = new Date();
@@ -124,7 +141,7 @@ function GoatPage() {
   };
 
   // Goat pregnancy duration = 150 days
-  function calculateDeliveryDate(dateStr: string): string {
+  function calculateDeliveryDate(dateStr: string | Date | number | null | undefined): string {
     if (!dateStr) return "";
     const date = parseLocalDate(dateStr);
     date.setDate(date.getDate() + 150);
@@ -134,7 +151,7 @@ function GoatPage() {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  function getMonthlyRedMarks(inseminationDateStr: string) {
+  function getMonthlyRedMarks(inseminationDateStr: string | Date | number | null | undefined) {
     if (!inseminationDateStr) return [];
     const marks = [];
     for (let i = 1; i <= 5; i++) {
