@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Calendar as CalendarIcon,
   Calculator,
@@ -9,18 +9,51 @@ import {
   Clock,
   Sparkles,
   ArrowRight,
-  Milk,
-  Egg,
   Volume2,
+  RefreshCw,
+  Send,
 } from "lucide-react";
 
 export default function HomePage() {
-  // 1. Date Calculator State
+  // 1. Dynamic Shared Calendar State
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date());
+  const [formattedDate, setFormattedDate] = useState<string>("");
+  const [dayName, setDayName] = useState<string>("");
+
+  // Initialize and Live Timer to change date automatically at midnight
+  useEffect(() => {
+    const today = new Date();
+    updateCalendarDisplay(today);
+
+    // Check every minute if the date changed automatically
+    const timer = setInterval(() => {
+      const now = new Date();
+      if (now.getDate() !== calendarDate.getDate()) {
+        updateCalendarDisplay(now);
+      }
+    }, 60000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const updateCalendarDisplay = (d: Date) => {
+    setCalendarDate(d);
+    setFormattedDate(
+      d.toLocaleDateString("ta-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    );
+    setDayName(d.toLocaleDateString("ta-IN", { weekday: "long" }));
+  };
+
+  // 2. Date Calculator State
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [dateDiffResult, setDateDiffResult] = useState<string | null>(null);
 
-  // 2. Interest Calculator State
+  // 3. Interest Calculator State
   const [principal, setPrincipal] = useState<number | "">("");
   const [rate, setRate] = useState<number | "">("");
   const [months, setMonths] = useState<number | "">("");
@@ -29,7 +62,7 @@ export default function HomePage() {
     total: number;
   } | null>(null);
 
-  // 3. Voice Recording State
+  // 4. Voice Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [voiceLogs, setVoiceLogs] = useState<string[]>([
     "இன்று 50 லிட்டர் பால் விற்பனை செய்யப்பட்டது.",
@@ -39,20 +72,35 @@ export default function HomePage() {
   // Date Difference Logic
   const calculateDateDiff = () => {
     if (!startDate || !endDate) return;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const [sY, sM, sD] = startDate.split("-").map(Number);
+    const [eY, eM, eD] = endDate.split("-").map(Number);
+
+    const start = new Date(sY, sM - 1, sD);
+    const end = new Date(eY, eM - 1, eD);
+
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const daysInMonth = 30;
-    const calculatedMonths = Math.floor(diffDays / daysInMonth);
-    const remainingDays = diffDays % daysInMonth;
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    const calculatedMonths = Math.floor(diffDays / 30);
+    const remainingDays = diffDays % 30;
 
     setDateDiffResult(
       `${diffDays} நாட்கள் (${calculatedMonths} மாதம் ${remainingDays} நாட்கள்)`
     );
   };
 
-  // Simple Interest Logic (மாத வட்டி கணக்கீடு)
+  // Push End-Date to Main Calendar
+  const pushDateToCalendar = () => {
+    if (!endDate) return;
+    const [y, m, d] = endDate.split("-").map(Number);
+    updateCalendarDisplay(new Date(y, m - 1, d));
+  };
+
+  // Reset Calendar to Today
+  const resetToToday = () => {
+    updateCalendarDisplay(new Date());
+  };
+
+  // Simple Interest Logic
   const calculateInterest = () => {
     if (!principal || !rate || !months) return;
     const monthlyInterest = (Number(principal) * Number(rate)) / 100;
@@ -94,40 +142,37 @@ export default function HomePage() {
               தமிழ் நாட்காட்டி, நாள் & வட்டி கணக்கீடுகள் மற்றும் பண்ணை நிகழ்வுப் பதிவுகள் ஒரே இடத்தில்.
             </p>
           </div>
-
-          {/* Quick Stats Summary */}
-          <div className="flex gap-3 w-full md:w-auto">
-            
-            
-          </div>
         </div>
       </div>
 
-      {/* Main 3 Flexbox / Grid Layout */}
+      {/* Main Grid Layout */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Box 1: தமிழ் நாட்காட்டி (Tamil Nithra Style Calendar Widget) */}
+        
+        {/* Box 1: Dynamic Tamil Calendar Widget */}
         <div className="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
                 <CalendarIcon className="w-6 h-6 text-emerald-600" /> தமிழ் நாட்காட்டி
               </h2>
-              <span className="text-xs bg-amber-100 text-amber-900 px-2.5 py-1 rounded-lg font-bold">
-                இன்று
-              </span>
+              <button
+                onClick={resetToToday}
+                className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all"
+              >
+                <RefreshCw className="w-3 h-3" /> இன்று
+              </button>
             </div>
 
             {/* Tamil Date Display Card */}
             <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl p-5 text-center mb-6">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">
-                தமிழ் ஆண்டு / மாதம்
+                தேர்ந்தெடுக்கப்பட்ட / தற்போதைய தேதி
               </p>
               <h3 className="text-2xl font-extrabold text-amber-950 mt-1">
-                பராபவ வருடம் - ஆவணி 30
+                {formattedDate || "ஏற்றப்படுகிறது..."}
               </h3>
               <div className="my-3 border-t border-amber-200/60 w-1/2 mx-auto"></div>
-              <p className="text-lg font-bold text-stone-800">15 ஆகஸ்ட் 2026</p>
-              <p className="text-xs text-stone-500 mt-0.5">சனிக்கிழமை</p>
+              <p className="text-sm font-bold text-stone-700 capitalize">{dayName}</p>
             </div>
 
             {/* Panchangam Details List */}
@@ -152,7 +197,7 @@ export default function HomePage() {
           </div>
 
           <div className="mt-6 pt-4 border-t text-xs text-stone-400 text-center">
-            நித்ரா பாணி தமிழ் பஞ்சாங்கம் பதிப்பு
+            நேரலை தமிழ் நாட்காட்டி பதிப்பு
           </div>
         </div>
 
@@ -191,12 +236,24 @@ export default function HomePage() {
                 />
               </div>
             </div>
-            <button
-              onClick={calculateDateDiff}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2 rounded-xl font-semibold transition-all"
-            >
-              நாட்களைக் கணக்கிடு
-            </button>
+
+            <div className="flex gap-2">
+              <button
+                onClick={calculateDateDiff}
+                className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2 rounded-xl font-semibold transition-all"
+              >
+                கணக்கிடு
+              </button>
+              {endDate && (
+                <button
+                  onClick={pushDateToCalendar}
+                  title="நாட்காட்டிக்கு அனுப்பு"
+                  className="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1 transition-all"
+                >
+                  <Send className="w-3.5 h-3.5" /> நாட்காட்டியில் பார்
+                </button>
+              )}
+            </div>
 
             {dateDiffResult && (
               <div className="mt-3 p-2.5 bg-emerald-100/70 border border-emerald-200 rounded-xl text-center">
@@ -331,6 +388,7 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );
