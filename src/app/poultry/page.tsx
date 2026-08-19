@@ -1,28 +1,37 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
 } from "lucide-react";
+import {
+  getHens,
+  addHen,
+  addIncubation,
+  addPoultryVaccination,
+  addPoultryNote,
+  updateHenType,
+  deleteHen,
+} from "@/app/actions/poultryActions";
 
 // --- TYPES & INTERFACES ---
 interface EggIncubation {
   id: number;
-  startDate: string;
-  expectedHatchDate: string;
+  startDate: string | Date | number | null | undefined;
+  expectedHatchDate: string | Date | number | null | undefined;
 }
 
 interface Vaccination {
   id: number;
   name: string;
-  date: string;
-  description: string;
+  date: string | Date | number | null | undefined;
+  description: string | null;
 }
 
 interface GeneralNote {
   id: number;
-  date: string;
+  date: string | Date | number | null | undefined;
   text: string;
 }
 
@@ -30,17 +39,15 @@ interface Poultry {
   id: number;
   name: string;
   type: "HEN" | "CHICK";
-  photoUrl: string;
-  birthDate: string;
-  source: "HATCHED_HERE" | "PURCHASED";
+  photoUrl: string | null;
+  birthDate: string | Date | number | null | undefined;
+  source: "BORN_HERE" | "PURCHASED";
   motherId?: number;
   motherName?: string;
   incubations: EggIncubation[];
   vaccinations: Vaccination[];
   notes: GeneralNote[];
 }
-
-const DEFAULT_IMAGE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='150' viewBox='0 0 150 150'><rect width='100%' height='100%' fill='%23e2e8f0'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%2364748b'>No Photo</text></svg>";
 
 // --- MAIN REACT COMPONENT ---
 function PoultryPage() {
@@ -59,7 +66,7 @@ function PoultryPage() {
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"HEN" | "CHICK">("HEN");
   const [newBirthDate, setNewBirthDate] = useState("");
-  const [newSource, setNewSource] = useState<"HATCHED_HERE" | "PURCHASED">("HATCHED_HERE");
+  const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
   const [selectedMotherForNew, setSelectedMotherForNew] = useState<number | "">("");
   const [photoBase64, setPhotoBase64] = useState<string>("");
 
@@ -85,14 +92,55 @@ function PoultryPage() {
 
   const [birds, setBirds] = useState<Poultry[]>([]);
 
-  // Safe Date parsing
-  function parseLocalDate(dateStr: string) {
-    const [year, month, day] = dateStr.split("-").map(Number);
-    return new Date(year, month - 1, day);
+  useEffect(() => {
+    loadBirds();
+  }, []);
+
+  async function loadBirds() {
+    try {
+      const rawData = (await getHens()) as unknown as Array<{
+        id: number; name: string; type: Poultry["type"]; photoUrl: string | null;
+        birthDate: Poultry["birthDate"]; source: Poultry["source"]; motherId: number | null;
+        incubations?: EggIncubation[]; vaccinations?: Vaccination[]; notes?: GeneralNote[];
+        mother?: { name: string } | null;
+      }>;
+      const data: Poultry[] = (rawData || []).map((bird) => ({
+        ...bird,
+        motherId: bird.motherId || undefined,
+        motherName: bird.mother?.name,
+        incubations: bird.incubations || [],
+        vaccinations: bird.vaccinations || [],
+        notes: bird.notes || [],
+      }));
+      setBirds(data);
+      setSelectedBird((previous) => previous ? data.find((bird) => bird.id === previous.id) || null : null);
+    } catch (error) {
+      console.error("Error loading poultry data:", error);
+    }
+  }
+
+  function parseLocalDate(dateValue: string | Date | number | null | undefined) {
+    if (!dateValue) return new Date();
+    if (dateValue instanceof Date) return new Date(dateValue.getTime());
+    if (typeof dateValue === "number") return new Date(dateValue);
+    const datePart = dateValue.slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (match) {
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+    const parsedDate = new Date(dateValue);
+    return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  }
+
+  function formatDateValue(dateValue: string | Date | number | null | undefined) {
+    if (!dateValue) return "-";
+    const date = parseLocalDate(dateValue);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 
   // Calculate Elapsed and Remaining Days (Poultry incubation is 23 days)
-  function getIncubationDaysInfo(startDateStr: string) {
+  function getIncubationDaysInfo(startDateStr: string | Date | number | null | undefined) {
     if (!startDateStr) return { daysPassed: 0, daysRemaining: 23 };
     
     const today = new Date();
@@ -124,7 +172,7 @@ function PoultryPage() {
   };
 
   // Poultry incubation period = 23 days
-  function calculateHatchDate(dateStr: string): string {
+  function calculateHatchDate(dateStr: string | Date | number | null | undefined): string {
     if (!dateStr) return "";
     const date = parseLocalDate(dateStr);
     date.setDate(date.getDate() + 23);
@@ -135,7 +183,7 @@ function PoultryPage() {
   }
 
   // Weekly milestone checkpoints during incubation
-  function getWeeklyCheckpoints(incubationDateStr: string) {
+  function getWeeklyCheckpoints(incubationDateStr: string | Date | number | null | undefined) {
     if (!incubationDateStr) return [];
     const checkpoints = [];
     const days = [7, 14, 18, 23];
@@ -155,91 +203,65 @@ function PoultryPage() {
     return checkpoints;
   }
 
-  const handleConvertToHen = (birdId: number) => {
-    const updated = birds.map((item) => {
-      if (item.id === birdId) return { ...item, type: "HEN" as const };
-      return item;
-    });
-    setBirds(updated);
-    if (selectedBird && selectedBird.id === birdId) {
-      setSelectedBird({ ...selectedBird, type: "HEN" });
+  const handleConvertToHen = async (birdId: number) => {
+    try {
+      await updateHenType(birdId, "HEN");
+      await loadBirds();
+    } catch (error) {
+      console.error("Error converting chick to hen:", error);
     }
   };
 
-  const handleRemoveBird = (e: React.FormEvent) => {
+  const handleRemoveBird = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBird) return;
-    const updated = birds.filter((item) => item.id !== selectedBird.id);
-    setBirds(updated);
-    setSelectedBird(null);
-    setIsRemoveModalOpen(false);
-    setRemoveNotes("");
+    try {
+      await deleteHen(selectedBird.id);
+      setSelectedBird(null);
+      setIsRemoveModalOpen(false);
+      setRemoveNotes("");
+      await loadBirds();
+    } catch (error) {
+      console.error("Error removing bird:", error);
+    }
   };
 
-  const handleAddBird = (e: React.FormEvent) => {
+  const handleAddBird = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
-    const today = new Date().toISOString().split("T")[0];
-    
-    let mName = "";
-    if (newType === "CHICK" && selectedMotherForNew) {
-      const m = birds.find(b => b.id === Number(selectedMotherForNew));
-      if (m) mName = m.name;
+    try {
+      await addHen({
+        name: newName,
+        type: newType,
+        birthDate: newBirthDate || new Date().toISOString().split("T")[0],
+        source: newSource,
+        photoUrl: photoBase64 || undefined,
+        motherId: newType === "CHICK" && selectedMotherForNew ? Number(selectedMotherForNew) : undefined,
+      });
+      setNewName(""); setPhotoBase64(""); setNewBirthDate(""); setSelectedMotherForNew("");
+      setIsAddModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error adding bird:", error);
     }
-
-    const newBirdItem: Poultry = {
-      id: Date.now(),
-      name: newName,
-      type: newType,
-      photoUrl: photoBase64 || DEFAULT_IMAGE,
-      birthDate: newBirthDate || today,
-      source: newSource,
-      motherId: newType === "CHICK" && selectedMotherForNew ? Number(selectedMotherForNew) : undefined,
-      motherName: mName || undefined,
-      incubations: [],
-      vaccinations: [],
-      notes: [],
-    };
-    setBirds([...birds, newBirdItem]);
-    setNewName("");
-    setPhotoBase64("");
-    setNewBirthDate("");
-    setSelectedMotherForNew("");
-    setIsAddModalOpen(false);
   };
 
   // Multiple Chicks Hatch Logic Handler
-  const handleChickHatch = (e: React.FormEvent) => {
+  const handleChickHatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBird) return;
-
-    const newChicksBatch: Poultry[] = [];
-    const baseId = Date.now();
-
-    for (let i = 0; i < chicksCount; i++) {
-      const customName = chickNames[i]?.trim();
-      const finalName = customName || `${selectedBird.name} - கோழிக்குஞ்சு ${i + 1}`;
-
-      newChicksBatch.push({
-        id: baseId + i,
-        name: finalName,
-        type: "CHICK",
-        photoUrl: DEFAULT_IMAGE,
-        birthDate: chickHatchDate,
-        source: "HATCHED_HERE",
-        motherId: selectedBird.id,
-        motherName: selectedBird.name,
-        incubations: [],
-        vaccinations: [],
-        notes: [],
-      });
+    try {
+      await Promise.all(Array.from({ length: chicksCount }, (_, index) => addHen({
+        name: chickNames[index]?.trim() || `${selectedBird.name} - கோழிக்குஞ்சு ${index + 1}`,
+        type: "CHICK", birthDate: chickHatchDate, source: "BORN_HERE", motherId: selectedBird.id,
+      })));
+      setChickNames([""]); setChicksCount(1);
+      setChickHatchDate(new Date().toISOString().split("T")[0]);
+      setIsChickHatchModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error adding chicks:", error);
     }
-
-    setBirds((prev) => [...prev, ...newChicksBatch]);
-    setChickNames([""]);
-    setChicksCount(1);
-    setChickHatchDate(new Date().toISOString().split("T")[0]);
-    setIsChickHatchModalOpen(false);
   };
 
   const handleChicksCountChange = (count: number) => {
@@ -261,85 +283,41 @@ function PoultryPage() {
     setChickNames(updated);
   };
 
-  const handleSaveIncubation = (e: React.FormEvent) => {
+  const handleSaveIncubation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newIncubationDate || !selectedBird) return;
-    let updatedIncubations: EggIncubation[];
-
-    if (editingIncubationId) {
-      updatedIncubations = selectedBird.incubations.map((inc) => {
-        if (inc.id === editingIncubationId) {
-          return {
-            ...inc,
-            startDate: newIncubationDate,
-            expectedHatchDate: calculateHatchDate(newIncubationDate),
-          };
-        }
-        return inc;
-      });
-    } else {
-      const newInc: EggIncubation = {
-        id: Date.now(),
-        startDate: newIncubationDate,
-        expectedHatchDate: calculateHatchDate(newIncubationDate),
-      };
-      updatedIncubations = [newInc, ...selectedBird.incubations];
+    try {
+      await addIncubation(selectedBird.id, newIncubationDate, 0);
+      setNewIncubationDate(""); setEditingIncubationId(null); setIsIncubationModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error saving incubation:", error);
     }
-
-    const updatedBirds = birds.map((c) => {
-      if (c.id === selectedBird.id) return { ...c, incubations: updatedIncubations };
-      return c;
-    });
-
-    setBirds(updatedBirds);
-    setSelectedBird({ ...selectedBird, incubations: updatedIncubations });
-    setNewIncubationDate("");
-    setEditingIncubationId(null);
-    setIsIncubationModalOpen(false);
   };
 
   const handleEditIncubation = (inc: EggIncubation) => {
     setEditingIncubationId(inc.id);
-    setNewIncubationDate(inc.startDate);
+    setNewIncubationDate(formatDateValue(inc.startDate));
     setIsIncubationModalOpen(true);
   };
 
-  const handleSaveVaccine = (e: React.FormEvent) => {
+  const handleSaveVaccine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacName || !vacDate || !selectedBird) return;
-    let updatedVaccinations: Vaccination[];
-
-    if (editingVacId) {
-      updatedVaccinations = selectedBird.vaccinations.map((vac) => {
-        if (vac.id === editingVacId) return { ...vac, name: vacName, date: vacDate, description: vacNotes };
-        return vac;
-      });
-    } else {
-      const newVac: Vaccination = {
-        id: Date.now(),
-        name: vacName,
-        date: vacDate,
-        description: vacNotes,
-      };
-      updatedVaccinations = [newVac, ...selectedBird.vaccinations];
+    try {
+      await addPoultryVaccination(selectedBird.id, vacName, vacDate, vacNotes);
+      setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null); setIsVaccineModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error saving poultry vaccination:", error);
     }
-
-    const updatedBirds = birds.map((c) => {
-      if (c.id === selectedBird.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-
-    setBirds(updatedBirds);
-    setSelectedBird({ ...selectedBird, vaccinations: updatedVaccinations });
-    setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null);
-    setIsVaccineModalOpen(false);
   };
 
   const handleEditVaccine = (vac: Vaccination) => {
     setEditingVacId(vac.id);
     setVacName(vac.name);
-    setVacDate(vac.date);
-    setVacNotes(vac.description);
+    setVacDate(formatDateValue(vac.date));
+    setVacNotes(vac.description || "");
     setIsVaccineModalOpen(true);
   };
 
@@ -354,41 +332,22 @@ function PoultryPage() {
     setSelectedBird({ ...selectedBird, vaccinations: updatedVaccinations });
   };
 
-  const handleSaveNote = (e: React.FormEvent) => {
+  const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteText || !selectedBird) return;
-
-    let updatedNotes: GeneralNote[];
-    if (editingNoteId) {
-      updatedNotes = (selectedBird.notes || []).map((n) => {
-        if (n.id === editingNoteId) return { ...n, date: noteDate, text: noteText };
-        return n;
-      });
-    } else {
-      const newNoteItem: GeneralNote = {
-        id: Date.now(),
-        date: noteDate,
-        text: noteText,
-      };
-      updatedNotes = [newNoteItem, ...(selectedBird.notes || [])];
+    try {
+      await addPoultryNote(selectedBird.id, noteDate, noteText);
+      setNoteText(""); setNoteDate(new Date().toISOString().split("T")[0]);
+      setEditingNoteId(null); setIsNoteModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error saving poultry note:", error);
     }
-
-    const updatedBirds = birds.map((c) => {
-      if (c.id === selectedBird.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-
-    setBirds(updatedBirds);
-    setSelectedBird({ ...selectedBird, notes: updatedNotes });
-    setNoteText("");
-    setNoteDate(new Date().toISOString().split("T")[0]);
-    setEditingNoteId(null);
-    setIsNoteModalOpen(false);
   };
 
   const handleEditNote = (note: GeneralNote) => {
     setEditingNoteId(note.id);
-    setNoteDate(note.date);
+    setNoteDate(formatDateValue(note.date));
     setNoteText(note.text);
     setIsNoteModalOpen(true);
   };
@@ -458,14 +417,18 @@ function PoultryPage() {
                   selectedBird?.id === bird.id ? "border-amber-600 ring-2 ring-amber-200" : "border-gray-100 hover:border-amber-300"
                 }`}
               >
-                <img
-                  src={bird.photoUrl}
-                  alt={bird.name}
-                  className="w-20 h-20 rounded-xl object-cover border border-amber-100"
-                />
+                {bird.photoUrl ? (
+                  <img
+                    src={bird.photoUrl}
+                    alt={bird.name}
+                    className="w-20 h-20 rounded-xl object-cover border border-amber-100"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-xl bg-amber-100 border border-amber-200" aria-hidden="true" />
+                )}
                 <div className="flex-1">
                   <h3 className="font-bold text-lg text-amber-950">{bird.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">பொரித்த/வாங்கிய தேதி: {bird.birthDate}</p>
+                  <p className="text-xs text-gray-500 mt-1">பொரித்த/வாங்கிய தேதி: {formatDateValue(bird.birthDate)}</p>
                   
                   {bird.type === "CHICK" && bird.motherName && (
                     <p className="text-xs text-amber-800 font-semibold mt-1">
@@ -474,7 +437,7 @@ function PoultryPage() {
                   )}
 
                   <span className="inline-block mt-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">
-                    {bird.source === "HATCHED_HERE" ? "பண்ணையில் பொரித்தவை" : "வாங்கப்பட்டது"}
+                    {bird.source === "BORN_HERE" ? "பண்ணையில் பொரித்தவை" : "வாங்கப்பட்டது"}
                   </span>
                 </div>
               </div>
@@ -517,14 +480,18 @@ function PoultryPage() {
 
               <div className="p-2">
                 <div className="flex gap-6 items-center bg-amber-50/50 p-4 rounded-xl mb-6">
-                  <img src={selectedBird.photoUrl} alt={selectedBird.name} className="w-24 h-24 rounded-lg object-cover" />
+                  {selectedBird.photoUrl ? (
+                    <img src={selectedBird.photoUrl} alt={selectedBird.name} className="w-24 h-24 rounded-lg object-cover" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-lg bg-amber-100" aria-hidden="true" />
+                  )}
                   <div>
                     <p className="text-sm font-semibold text-gray-700">வகை: <span className="text-amber-900">{selectedBird.type === "HEN" ? "தாய்க்கோழி" : "கோழிக்குஞ்சு"}</span></p>
-                    <p className="text-sm font-semibold text-gray-700 mt-1">தேதி: <span className="text-amber-900">{selectedBird.birthDate}</span></p>
+                    <p className="text-sm font-semibold text-gray-700 mt-1">தேதி: <span className="text-amber-900">{formatDateValue(selectedBird.birthDate)}</span></p>
                     {selectedBird.motherName && (
                       <p className="text-sm font-semibold text-amber-800 mt-1">அம்மா கோழி பெயர்: <span className="font-bold">{selectedBird.motherName}</span></p>
                     )}
-                    <p className="text-sm font-semibold text-gray-700 mt-1">மூலம்: <span className="text-amber-900">{selectedBird.source === "HATCHED_HERE" ? "பண்ணையில் பொரித்தவை" : "வாங்கப்பட்ட கோழி"}</span></p>
+                    <p className="text-sm font-semibold text-gray-700 mt-1">மூலம்: <span className="text-amber-900">{selectedBird.source === "BORN_HERE" ? "பண்ணையில் பொரித்தவை" : "வாங்கப்பட்ட கோழி"}</span></p>
                   </div>
                 </div>
 
@@ -557,11 +524,11 @@ function PoultryPage() {
                               <div className="grid grid-cols-2 gap-4 flex-1">
                                 <div className="bg-white p-3 rounded-lg border">
                                   <p className="text-xs text-gray-500">அடை வைத்த தேதி</p>
-                                  <p className="font-bold text-amber-900">{inc.startDate}</p>
+                                  <p className="font-bold text-amber-900">{formatDateValue(inc.startDate)}</p>
                                 </div>
                                 <div className="bg-amber-100 p-3 rounded-lg border border-amber-300">
                                   <p className="text-xs text-amber-800 font-semibold">எதிர்பார்க்கப்படும் பொரிக்கும் தேதி (+23 நாட்கள்)</p>
-                                  <p className="font-extrabold text-amber-950 text-lg">{inc.expectedHatchDate}</p>
+                                  <p className="font-extrabold text-amber-950 text-lg">{formatDateValue(inc.expectedHatchDate)}</p>
                                 </div>
                               </div>
                               
@@ -651,7 +618,7 @@ function PoultryPage() {
                           {selectedBird.vaccinations.map((vac) => (
                             <tr key={vac.id} className="hover:bg-gray-50/50">
                               <td className="p-3 font-semibold text-gray-800">{vac.name}</td>
-                              <td className="p-3 text-gray-600">{vac.date}</td>
+                              <td className="p-3 text-gray-600">{formatDateValue(vac.date)}</td>
                               <td className="p-3 text-gray-500">{vac.description || "-"}</td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -703,7 +670,7 @@ function PoultryPage() {
                       {selectedBird.notes.map((note) => (
                         <div key={note.id} className="p-3.5 bg-yellow-50/60 border border-yellow-200 rounded-xl flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-bold text-yellow-800 block mb-1">{note.date}</span>
+                            <span className="text-xs font-bold text-yellow-800 block mb-1">{formatDateValue(note.date)}</span>
                             <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.text}</p>
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -832,10 +799,10 @@ function PoultryPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-1">மூலம்</label>
                   <select
                     value={newSource}
-                    onChange={(e) => setNewSource(e.target.value as "HATCHED_HERE" | "PURCHASED")}
+                    onChange={(e) => setNewSource(e.target.value as "BORN_HERE" | "PURCHASED")}
                     className="w-full border rounded-xl p-2.5 text-sm bg-white"
                   >
-                    <option value="HATCHED_HERE">பண்ணையில் பொரித்தவை</option>
+                    <option value="BORN_HERE">பண்ணையில் பொரித்தவை</option>
                     <option value="PURCHASED">வாங்கப்பட்டது</option>
                   </select>
                 </div>
