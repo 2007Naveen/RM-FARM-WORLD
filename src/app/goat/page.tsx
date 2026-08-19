@@ -1,28 +1,39 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
 } from "lucide-react";
+import {
+  getGoats,
+  addGoat,
+  addGoatMating,
+  addGoatVaccination,
+  addGoatNote,
+  updateGoatType,
+  deleteGoat,
+} from "@/app/actions/goatActions";
 
 // --- TYPES & INTERFACES ---
+type DateValue = string | Date | number | null | undefined;
+
 interface Insemination {
   id: number;
-  inseminationDate: string;
-  expectedDeliveryDate: string;
+  inseminationDate: DateValue;
+  expectedDeliveryDate: DateValue;
 }
 
 interface Vaccination {
   id: number;
   name: string;
-  date: string;
-  description: string;
+  date: DateValue;
+  description: string | null;
 }
 
 interface GeneralNote {
   id: number;
-  date: string;
+  date: DateValue;
   text: string;
 }
 
@@ -30,8 +41,8 @@ interface Goat {
   id: number;
   name: string;
   type: "GOAT" | "KID";
-  photoUrl: string;
-  birthDate: string;
+  photoUrl: string | null;
+  birthDate: DateValue;
   source: "BORN_HERE" | "PURCHASED";
   motherId?: number;
   motherName?: string;
@@ -39,8 +50,6 @@ interface Goat {
   vaccinations: Vaccination[];
   notes: GeneralNote[];
 }
-
-const DEFAULT_IMAGE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='150' viewBox='0 0 150 150'><rect width='100%' height='100%' fill='%23e2e8f0'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%2364748b'>No Photo</text></svg>";
 
 // --- MAIN REACT COMPONENT ---
 function GoatPage() {
@@ -85,6 +94,53 @@ function GoatPage() {
 
   const [goats, setGoats] = useState<Goat[]>([]);
 
+  useEffect(() => {
+    loadGoats();
+  }, []);
+
+  async function loadGoats() {
+    try {
+      const rawData = (await getGoats()) as unknown as Array<{
+        id: number;
+        name: string;
+        type: Goat["type"];
+        photoUrl: string | null;
+        birthDate: DateValue;
+        source: Goat["source"];
+        motherId: number | null;
+        matingRecords?: Array<{
+          id: number;
+          matingDate: DateValue;
+          expectedDeliveryDate: DateValue;
+        }>;
+        vaccinations?: Vaccination[];
+        notes?: GeneralNote[];
+        mother?: { name: string } | null;
+      }>;
+      const data: Goat[] = (rawData || []).map((goat) => ({
+        ...goat,
+        photoUrl: goat.photoUrl,
+        motherId: goat.motherId || undefined,
+        motherName: goat.mother?.name,
+        inseminations: (goat.matingRecords || []).map((record) => ({
+          id: record.id,
+          inseminationDate: record.matingDate,
+          expectedDeliveryDate: record.expectedDeliveryDate,
+        })),
+        vaccinations: goat.vaccinations || [],
+        notes: goat.notes || [],
+      }));
+
+      setGoats(data);
+      setSelectedGoat((previous) => {
+        if (!previous) return null;
+        return data.find((goat) => goat.id === previous.id) || null;
+      });
+    } catch (error) {
+      console.error("Error loading goats:", error);
+    }
+  }
+
   // Safe Date parsing
   function parseLocalDate(dateValue: string | Date | number | null | undefined) {
     if (!dateValue) return new Date();
@@ -106,6 +162,15 @@ function GoatPage() {
 
     const parsedDate = new Date(dateValue);
     return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  }
+
+  function formatDateValue(dateValue: string | Date | number | null | undefined) {
+    if (!dateValue) return "-";
+    const date = parseLocalDate(dateValue);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   // Calculate Elapsed and Remaining Days (Goat gestation is ~150 days)
@@ -168,91 +233,77 @@ function GoatPage() {
     return marks;
   }
 
-  const handleConvertToGoat = (goatId: number) => {
-    const updated = goats.map((item) => {
-      if (item.id === goatId) return { ...item, type: "GOAT" as const };
-      return item;
-    });
-    setGoats(updated);
-    if (selectedGoat && selectedGoat.id === goatId) {
-      setSelectedGoat({ ...selectedGoat, type: "GOAT" });
+  const handleConvertToGoat = async (goatId: number) => {
+    try {
+      await updateGoatType(goatId, "GOAT");
+      await loadGoats();
+    } catch (error) {
+      console.error("Error converting kid to goat:", error);
     }
   };
 
-  const handleRemoveGoat = (e: React.FormEvent) => {
+  const handleRemoveGoat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGoat) return;
-    const updated = goats.filter((item) => item.id !== selectedGoat.id);
-    setGoats(updated);
-    setSelectedGoat(null);
-    setIsRemoveModalOpen(false);
-    setRemoveNotes("");
+    try {
+      await deleteGoat(selectedGoat.id);
+      setSelectedGoat(null);
+      setIsRemoveModalOpen(false);
+      setRemoveNotes("");
+      await loadGoats();
+    } catch (error) {
+      console.error("Error removing goat:", error);
+    }
   };
 
-  const handleAddGoat = (e: React.FormEvent) => {
+  const handleAddGoat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
-    const today = new Date().toISOString().split("T")[0];
-    
-    let mName = "";
-    if (newType === "KID" && selectedMotherForNew) {
-      const m = goats.find(g => g.id === Number(selectedMotherForNew));
-      if (m) mName = m.name;
+    try {
+      await addGoat({
+        name: newName,
+        type: newType,
+        birthDate: newBirthDate || new Date().toISOString().split("T")[0],
+        source: newSource,
+        photoUrl: photoBase64 || undefined,
+        motherId: newType === "KID" && selectedMotherForNew ? Number(selectedMotherForNew) : undefined,
+      });
+      setNewName("");
+      setPhotoBase64("");
+      setNewBirthDate("");
+      setSelectedMotherForNew("");
+      setIsAddModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error adding goat:", error);
     }
-
-    const newGoatItem: Goat = {
-      id: Date.now(),
-      name: newName,
-      type: newType,
-      photoUrl: photoBase64 || DEFAULT_IMAGE,
-      birthDate: newBirthDate || today,
-      source: newSource,
-      motherId: newType === "KID" && selectedMotherForNew ? Number(selectedMotherForNew) : undefined,
-      motherName: mName || undefined,
-      inseminations: [],
-      vaccinations: [],
-      notes: [],
-    };
-    setGoats([...goats, newGoatItem]);
-    setNewName("");
-    setPhotoBase64("");
-    setNewBirthDate("");
-    setSelectedMotherForNew("");
-    setIsAddModalOpen(false);
   };
 
   // Multiple Kids Birth Logic Handler
-  const handleKidBirth = (e: React.FormEvent) => {
+  const handleKidBirth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGoat) return;
 
-    const newKidsBatch: Goat[] = [];
-    const baseId = Date.now();
-
-    for (let i = 0; i < kidsCount; i++) {
-      const customName = kidNames[i]?.trim();
-      const finalName = customName || `${selectedGoat.name} - குட்டி ${i + 1}`;
-
-      newKidsBatch.push({
-        id: baseId + i,
-        name: finalName,
-        type: "KID",
-        photoUrl: DEFAULT_IMAGE,
-        birthDate: kidBirthDate,
-        source: "BORN_HERE",
-        motherId: selectedGoat.id,
-        motherName: selectedGoat.name,
-        inseminations: [],
-        vaccinations: [],
-        notes: [],
-      });
+    try {
+      await Promise.all(
+        Array.from({ length: kidsCount }, (_, index) =>
+          addGoat({
+            name: kidNames[index]?.trim() || `${selectedGoat.name} - குட்டி ${index + 1}`,
+            type: "KID",
+            birthDate: kidBirthDate,
+            source: "BORN_HERE",
+            motherId: selectedGoat.id,
+          })
+        )
+      );
+      setKidNames([""]);
+      setKidsCount(1);
+      setKidBirthDate(new Date().toISOString().split("T")[0]);
+      setIsKidBirthModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error adding kids:", error);
     }
-
-    setGoats((prev) => [...prev, ...newKidsBatch]);
-    setKidNames([""]);
-    setKidsCount(1);
-    setKidBirthDate(new Date().toISOString().split("T")[0]);
-    setIsKidBirthModalOpen(false);
   };
 
   const handleKidsCountChange = (count: number) => {
@@ -274,85 +325,44 @@ function GoatPage() {
     setKidNames(updated);
   };
 
-  const handleSaveInsemination = (e: React.FormEvent) => {
+  const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedGoat) return;
-    let updatedInseminations: Insemination[];
-
-    if (editingInsemId) {
-      updatedInseminations = selectedGoat.inseminations.map((insem) => {
-        if (insem.id === editingInsemId) {
-          return {
-            ...insem,
-            inseminationDate: newInsemDate,
-            expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
-          };
-        }
-        return insem;
-      });
-    } else {
-      const newInsem: Insemination = {
-        id: Date.now(),
-        inseminationDate: newInsemDate,
-        expectedDeliveryDate: calculateDeliveryDate(newInsemDate),
-      };
-      updatedInseminations = [newInsem, ...selectedGoat.inseminations];
+    try {
+      await addGoatMating(selectedGoat.id, newInsemDate);
+      setNewInsemDate("");
+      setEditingInsemId(null);
+      setIsInseminationModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error saving mating record:", error);
     }
-
-    const updatedGoats = goats.map((c) => {
-      if (c.id === selectedGoat.id) return { ...c, inseminations: updatedInseminations };
-      return c;
-    });
-
-    setGoats(updatedGoats);
-    setSelectedGoat({ ...selectedGoat, inseminations: updatedInseminations });
-    setNewInsemDate("");
-    setEditingInsemId(null);
-    setIsInseminationModalOpen(false);
   };
 
   const handleEditInsemination = (insem: Insemination) => {
     setEditingInsemId(insem.id);
-    setNewInsemDate(insem.inseminationDate);
+    setNewInsemDate(formatDateValue(insem.inseminationDate));
     setIsInseminationModalOpen(true);
   };
 
-  const handleSaveVaccine = (e: React.FormEvent) => {
+  const handleSaveVaccine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacName || !vacDate || !selectedGoat) return;
-    let updatedVaccinations: Vaccination[];
-
-    if (editingVacId) {
-      updatedVaccinations = selectedGoat.vaccinations.map((vac) => {
-        if (vac.id === editingVacId) return { ...vac, name: vacName, date: vacDate, description: vacNotes };
-        return vac;
-      });
-    } else {
-      const newVac: Vaccination = {
-        id: Date.now(),
-        name: vacName,
-        date: vacDate,
-        description: vacNotes,
-      };
-      updatedVaccinations = [newVac, ...selectedGoat.vaccinations];
+    try {
+      await addGoatVaccination(selectedGoat.id, vacName, vacDate, vacNotes);
+      setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null);
+      setIsVaccineModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error saving goat vaccination:", error);
     }
-
-    const updatedGoats = goats.map((c) => {
-      if (c.id === selectedGoat.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-
-    setGoats(updatedGoats);
-    setSelectedGoat({ ...selectedGoat, vaccinations: updatedVaccinations });
-    setVacName(""); setVacDate(""); setVacNotes(""); setEditingVacId(null);
-    setIsVaccineModalOpen(false);
   };
 
   const handleEditVaccine = (vac: Vaccination) => {
     setEditingVacId(vac.id);
     setVacName(vac.name);
-    setVacDate(vac.date);
-    setVacNotes(vac.description);
+    setVacDate(formatDateValue(vac.date));
+    setVacNotes(vac.description || "");
     setIsVaccineModalOpen(true);
   };
 
@@ -367,41 +377,24 @@ function GoatPage() {
     setSelectedGoat({ ...selectedGoat, vaccinations: updatedVaccinations });
   };
 
-  const handleSaveNote = (e: React.FormEvent) => {
+  const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteText || !selectedGoat) return;
-
-    let updatedNotes: GeneralNote[];
-    if (editingNoteId) {
-      updatedNotes = (selectedGoat.notes || []).map((n) => {
-        if (n.id === editingNoteId) return { ...n, date: noteDate, text: noteText };
-        return n;
-      });
-    } else {
-      const newNoteItem: GeneralNote = {
-        id: Date.now(),
-        date: noteDate,
-        text: noteText,
-      };
-      updatedNotes = [newNoteItem, ...(selectedGoat.notes || [])];
+    try {
+      await addGoatNote(selectedGoat.id, noteDate, noteText);
+      setNoteText("");
+      setNoteDate(new Date().toISOString().split("T")[0]);
+      setEditingNoteId(null);
+      setIsNoteModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error saving goat note:", error);
     }
-
-    const updatedGoats = goats.map((c) => {
-      if (c.id === selectedGoat.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-
-    setGoats(updatedGoats);
-    setSelectedGoat({ ...selectedGoat, notes: updatedNotes });
-    setNoteText("");
-    setNoteDate(new Date().toISOString().split("T")[0]);
-    setEditingNoteId(null);
-    setIsNoteModalOpen(false);
   };
 
   const handleEditNote = (note: GeneralNote) => {
     setEditingNoteId(note.id);
-    setNoteDate(note.date);
+    setNoteDate(formatDateValue(note.date));
     setNoteText(note.text);
     setIsNoteModalOpen(true);
   };
@@ -471,14 +464,18 @@ function GoatPage() {
                   selectedGoat?.id === goat.id ? "border-emerald-600 ring-2 ring-emerald-200" : "border-gray-100 hover:border-emerald-300"
                 }`}
               >
-                <img
-                  src={goat.photoUrl}
-                  alt={goat.name}
-                  className="w-20 h-20 rounded-xl object-cover border border-emerald-100"
-                />
+                {goat.photoUrl ? (
+                  <img
+                    src={goat.photoUrl}
+                    alt={goat.name}
+                    className="w-20 h-20 rounded-xl object-cover border border-emerald-100"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-xl bg-emerald-100 border border-emerald-200" aria-hidden="true" />
+                )}
                 <div className="flex-1">
                   <h3 className="font-bold text-lg text-emerald-950">{goat.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">பிறந்த தேதி: {goat.birthDate}</p>
+                  <p className="text-xs text-gray-500 mt-1">பிறந்த தேதி: {formatDateValue(goat.birthDate)}</p>
                   
                   {goat.type === "KID" && goat.motherName && (
                     <p className="text-xs text-emerald-700 font-semibold mt-1">
@@ -530,10 +527,14 @@ function GoatPage() {
 
               <div className="p-2">
                 <div className="flex gap-6 items-center bg-emerald-50/50 p-4 rounded-xl mb-6">
-                  <img src={selectedGoat.photoUrl} alt={selectedGoat.name} className="w-24 h-24 rounded-lg object-cover" />
+                  {selectedGoat.photoUrl ? (
+                    <img src={selectedGoat.photoUrl} alt={selectedGoat.name} className="w-24 h-24 rounded-lg object-cover" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-lg bg-emerald-100" aria-hidden="true" />
+                  )}
                   <div>
                     <p className="text-sm font-semibold text-gray-700">வகை: <span className="text-emerald-900">{selectedGoat.type === "GOAT" ? "பெரிய ஆடு" : "குட்டி"}</span></p>
-                    <p className="text-sm font-semibold text-gray-700 mt-1">பிறந்த தேதி: <span className="text-emerald-900">{selectedGoat.birthDate}</span></p>
+                    <p className="text-sm font-semibold text-gray-700 mt-1">பிறந்த தேதி: <span className="text-emerald-900">{formatDateValue(selectedGoat.birthDate)}</span></p>
                     {selectedGoat.motherName && (
                       <p className="text-sm font-semibold text-emerald-800 mt-1">தாய் ஆட்டின் பெயர்: <span className="font-bold">{selectedGoat.motherName}</span></p>
                     )}
@@ -570,11 +571,11 @@ function GoatPage() {
                               <div className="grid grid-cols-2 gap-4 flex-1">
                                 <div className="bg-white p-3 rounded-lg border">
                                   <p className="text-xs text-gray-500">சினை ஊசி/இணைப்பு தேதி</p>
-                                  <p className="font-bold text-emerald-900">{insem.inseminationDate}</p>
+                                  <p className="font-bold text-emerald-900">{formatDateValue(insem.inseminationDate)}</p>
                                 </div>
                                 <div className="bg-emerald-100 p-3 rounded-lg border border-emerald-300">
                                   <p className="text-xs text-emerald-800 font-semibold">எதிர்பார்க்கப்படும் ஈனும் தேதி (+150 நாட்கள்)</p>
-                                  <p className="font-extrabold text-emerald-950 text-lg">{insem.expectedDeliveryDate}</p>
+                                  <p className="font-extrabold text-emerald-950 text-lg">{formatDateValue(insem.expectedDeliveryDate)}</p>
                                 </div>
                               </div>
                               
@@ -664,7 +665,7 @@ function GoatPage() {
                           {selectedGoat.vaccinations.map((vac) => (
                             <tr key={vac.id} className="hover:bg-gray-50/50">
                               <td className="p-3 font-semibold text-gray-800">{vac.name}</td>
-                              <td className="p-3 text-gray-600">{vac.date}</td>
+                              <td className="p-3 text-gray-600">{formatDateValue(vac.date)}</td>
                               <td className="p-3 text-gray-500">{vac.description || "-"}</td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -716,7 +717,7 @@ function GoatPage() {
                       {selectedGoat.notes.map((note) => (
                         <div key={note.id} className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-bold text-amber-800 block mb-1">{note.date}</span>
+                            <span className="text-xs font-bold text-amber-800 block mb-1">{formatDateValue(note.date)}</span>
                             <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.text}</p>
                           </div>
                           <div className="flex items-center gap-1.5">

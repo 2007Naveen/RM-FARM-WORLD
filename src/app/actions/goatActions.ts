@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
-// 1. அனைத்து ஆடுகளின் பட்டியலை பெற (தாய்/குட்டி உறவுகளுடன்)
+// 1. அனைத்து ஆடுகளின் பட்டியலை பெற
 export async function getGoats() {
   try {
     return await prisma.goat.findMany({
@@ -14,7 +14,7 @@ export async function getGoats() {
         mother: true,
         kids: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'desc' },
     });
   } catch (error) {
     console.error('Error fetching goats:', error);
@@ -51,7 +51,7 @@ export async function addGoat(data: {
   }
 }
 
-// 3. இணைகேர்த்தல் (Mating) பதிவு சேர்க்க (150 நாட்கள் பிரசவ காலம்)
+// 3. இணைசேர்த்தல் (Mating) பதிவு சேர்க்க (150 நாட்கள்)
 export async function addGoatMating(goatId: number, date: string) {
   try {
     const matingDate = new Date(date);

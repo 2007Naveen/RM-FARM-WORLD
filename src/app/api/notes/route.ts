@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 // அனைத்து குறிப்புகளையும் பெறுதல் (Get all notes)
 export async function GET() {
   try {
-    const notes = await prisma.note.findMany({
+    const notes = await prisma.dailyNote.findMany({
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(notes);
@@ -23,8 +23,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    const newNote = await prisma.note.create({
-      data: { text },
+    const newNote = await prisma.dailyNote.create({
+      data: { title: "Daily note", content: text },
     });
 
     return NextResponse.json(newNote, { status: 201 });
@@ -43,8 +43,8 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    await prisma.note.delete({
-      where: { id },
+    await prisma.dailyNote.delete({
+      where: { id: Number(id) },
     });
 
     return NextResponse.json({ message: "Note deleted" });
