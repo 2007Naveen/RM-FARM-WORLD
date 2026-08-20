@@ -1,0 +1,21 @@
+{
+  "name": "RM Farm World",
+  "short_name": "RM Farm",
+  "description": "மாடு, ஆடு, கோழிப் பண்ணை மேலாண்மை செயலி",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#064e3b",
+  "theme_color": "#064e3b",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Tamil, Inter } from "next/font/google";
 import Navbar from "@/components/Navbar";
 import "./globals.css";
@@ -14,10 +14,15 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#064e3b",
+};
+
 export const metadata: Metadata = {
   title: "RM Farm World",
   description:
     "மாடு, ஆடு, கோழிப் பண்ணை மேலாண்மை, தானியங்கி தடுப்பூசி அட்டவணை மற்றும் தமிழ் நாட்காட்டி செயலி.",
+  manifest: "/manifest.json",
   icons: {
     icon: [
       { url: "/logo.png", sizes: "32x32", type: "image/png" },
