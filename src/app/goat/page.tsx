@@ -577,7 +577,7 @@ function GoatPage() {
                           const daysInfo = getInseminationDaysInfo(insem.inseminationDate);
                           return (
                             <div key={insem.id} className="border border-emerald-200 rounded-xl p-3 sm:p-4 bg-emerald-50/20 mb-3 sm:mb-4 relative">
-                              <div className="flex justify-between items-start mb-3">
+                              <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-[2vw] sm:gap-4 flex-1 w-full">
                                   <div className="bg-white p-3 rounded-lg border">
                                     <p className="text-[2.5vw] sm:text-xs text-gray-500">சினை ஊசி/இணைப்பு தேதி</p>

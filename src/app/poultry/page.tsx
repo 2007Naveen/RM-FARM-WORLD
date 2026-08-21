@@ -534,7 +534,7 @@ function PoultryPage() {
                           const daysInfo = getIncubationDaysInfo(inc.startDate);
                           return (
                             <div key={inc.id} className="border border-emerald-200 rounded-xl p-4 bg-emerald-50/30 mb-4 relative">
-                              <div className="flex justify-between items-start mb-3">
+                              <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-[2vw] sm:gap-4 flex-1 w-full">
                                   <div className="bg-white p-3 rounded-lg border border-emerald-100">
                                     <p className="text-xs text-gray-500">அடை வைத்த தேதி</p>
