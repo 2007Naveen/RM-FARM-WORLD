@@ -1,5 +1,5 @@
 **My First Real World Project**
-# 🚜 RM Farm World – Complete Farm & Livestock Management System
+# 🚜 RM Farm World – Complete Farm & Livestock Management System for my farm
 
 **RM Farm World** is a full-stack, mobile-first web application built with **Next.js 14**, **TypeScript**, and **Tailwind CSS**. It serves as an integrated digital register for farm owners to monitor and manage multiple livestock categories—including **Goats & Sheep**, **Cattle (Cows)**, and **Poultry (Hens/Chicks)**—in real time.
 
