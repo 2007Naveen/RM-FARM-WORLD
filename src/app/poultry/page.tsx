@@ -914,7 +914,7 @@ export default function PoultryPage() {
           </div>
         )}
 
-        {/* Modal: Chicks Hatch Registration */}
+        {/* Modal: Chicks Hatch Registration Yes */}
         {isChickHatchModalOpen && selectedBird && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200 max-h-[90vh] overflow-y-auto">

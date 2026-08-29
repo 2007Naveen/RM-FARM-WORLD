@@ -1,5 +1,5 @@
 'use client';
-
+// Headers 
 import { useEffect, useState } from 'react';
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
@@ -11,7 +11,7 @@ import {
   deleteVaccination, deleteNote
 } from '@/app/actions/cowActions';
 
-// --- TYPES & INTERFACES ---
+// --- TYPES & INTERFACES --- 
 interface Insemination {
   id: number;
   inseminationDate: string;

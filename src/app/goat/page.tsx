@@ -308,7 +308,7 @@ function GoatPage() {
       console.error("Error adding kids:", error);
     }
   };
-
+// kannukutty count 
   const handleKidsCountChange = (count: number) => {
     setKidsCount(count);
     setKidNames((prev) => {
