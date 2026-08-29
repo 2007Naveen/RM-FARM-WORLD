@@ -63,4 +63,4 @@
 
 ---
 
-Would you like me to generate the Prisma Schema (`schema.prisma`) model for the Goat module so you can add it to your database?
+These is the overview of my project!
