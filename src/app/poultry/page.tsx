@@ -13,6 +13,9 @@ import {
   addPoultryNote,
   updateHenType,
   deleteHen,
+  deleteIncubation,
+  deletePoultryVaccination,
+  deletePoultryNote,
 } from "@/app/actions/poultryActions";
 
 // --- TYPES & INTERFACES ---
@@ -50,7 +53,7 @@ interface Poultry {
 }
 
 // --- MAIN REACT COMPONENT ---
-function PoultryPage() {
+export default function PoultryPage() {
   const [activeTab, setActiveTab] = useState<"HEN" | "CHICK">("HEN");
   const [selectedBird, setSelectedBird] = useState<Poultry | null>(null);
   
@@ -123,7 +126,7 @@ function PoultryPage() {
     if (!dateValue) return new Date();
     if (dateValue instanceof Date) return new Date(dateValue.getTime());
     if (typeof dateValue === "number") return new Date(dateValue);
-    const datePart = dateValue.slice(0, 10);
+    const datePart = String(dateValue).slice(0, 10);
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
     if (match) {
       const [, year, month, day] = match;
@@ -296,6 +299,30 @@ function PoultryPage() {
     setIsIncubationModalOpen(true);
   };
 
+  const handleDeleteIncubation = async (incId: number) => {
+    if (!selectedBird) return;
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteIncubation(incId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setBirds((prevBirds) =>
+        prevBirds.map((bird) =>
+          bird.id === selectedBird.id
+            ? { ...bird, incubations: bird.incubations.filter((i) => i.id !== incId) }
+            : bird
+        )
+      );
+
+      // 3. Keep selectedBird synchronized
+      setSelectedBird((prev) =>
+        prev ? { ...prev, incubations: prev.incubations.filter((i) => i.id !== incId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting incubation:", error);
+    }
+  };
+
   const handleSaveVaccine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacName || !vacDate || !selectedBird) return;
@@ -316,15 +343,28 @@ function PoultryPage() {
     setIsVaccineModalOpen(true);
   };
 
-  const handleDeleteVaccine = (vacId: number) => {
+  const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedBird) return;
-    const updatedVaccinations = selectedBird.vaccinations.filter((vac) => vac.id !== vacId);
-    const updatedBirds = birds.map((c) => {
-      if (c.id === selectedBird.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-    setBirds(updatedBirds);
-    setSelectedBird({ ...selectedBird, vaccinations: updatedVaccinations });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deletePoultryVaccination(vacId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setBirds((prevBirds) =>
+        prevBirds.map((bird) =>
+          bird.id === selectedBird.id
+            ? { ...bird, vaccinations: bird.vaccinations.filter((v) => v.id !== vacId) }
+            : bird
+        )
+      );
+
+      // 3. Keep selectedBird synchronized
+      setSelectedBird((prev) =>
+        prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting vaccine:", error);
+    }
   };
 
   const handleSaveNote = async (e: React.FormEvent) => {
@@ -347,15 +387,28 @@ function PoultryPage() {
     setIsNoteModalOpen(true);
   };
 
-  const handleDeleteNote = (noteId: number) => {
+  const handleDeleteNote = async (noteId: number) => {
     if (!selectedBird) return;
-    const updatedNotes = (selectedBird.notes || []).filter((n) => n.id !== noteId);
-    const updatedBirds = birds.map((c) => {
-      if (c.id === selectedBird.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-    setBirds(updatedBirds);
-    setSelectedBird({ ...selectedBird, notes: updatedNotes });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deletePoultryNote(noteId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setBirds((prevBirds) =>
+        prevBirds.map((bird) =>
+          bird.id === selectedBird.id
+            ? { ...bird, notes: bird.notes.filter((n) => n.id !== noteId) }
+            : bird
+        )
+      );
+
+      // 3. Keep selectedBird synchronized
+      setSelectedBird((prev) =>
+        prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting note:", error);
+    }
   };
 
   const filteredBirds = birds.filter((item) => item.type === activeTab);
@@ -553,7 +606,12 @@ function PoultryPage() {
                                   >
                                     <Edit className="w-3.5 h-3.5"/> எடிட்
                                   </button>
-                                  
+                                  <button
+                                    onClick={() => handleDeleteIncubation(inc.id)}
+                                    className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1 bg-white border border-red-200 p-1.5 rounded-lg justify-center font-medium"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5"/> நீக்கு
+                                  </button>
                                   <button
                                     onClick={() => setIsChickHatchModalOpen(true)}
                                     className="text-xs bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-800 transition-all font-semibold"
@@ -564,7 +622,7 @@ function PoultryPage() {
                               </div>
 
                               {/* Days Counter Box */}
-                              <div className="mb-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-3.5 rounded-xl shadow-sm flex items-center justify-around">
+                              <div className="mb-4 mt-3 bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-3.5 rounded-xl shadow-sm flex items-center justify-around">
                                 <div className="flex items-center gap-2">
                                   <Clock className="w-5 h-5 text-emerald-300"/>
                                   <div>
@@ -1044,5 +1102,3 @@ function PoultryPage() {
     </div>
   );
 }
-
-export default PoultryPage;

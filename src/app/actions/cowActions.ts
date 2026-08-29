@@ -137,3 +137,45 @@ export async function deleteCattle(cattleId: number) {
     throw new Error('Failed to delete cattle');
   }
 }
+
+// சினைப் பதிவை நீக்க (DELETE INSEMINATION)
+export async function deleteInsemination(inseminationId: number) {
+  try {
+    const deleted = await prisma.insemination.delete({
+      where: { id: Number(inseminationId) },
+    });
+    revalidatePath('/cow');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting insemination:', error);
+    throw new Error('Failed to delete insemination');
+  }
+}
+
+// தடுப்பூசி பதிவை நீக்க (DELETE VACCINATION)
+export async function deleteVaccination(vaccineId: number) {
+  try {
+    const deleted = await prisma.cattleVaccine.delete({
+      where: { id: Number(vaccineId) },
+    });
+    revalidatePath('/cow');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting vaccination:', error);
+    throw new Error('Failed to delete vaccination');
+  }
+}
+
+// குறிப்பை நீக்க (DELETE NOTE)
+export async function deleteNote(noteId: number) {
+  try {
+    const deleted = await prisma.cattleNote.delete({
+      where: { id: Number(noteId) },
+    });
+    revalidatePath('/cow');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    throw new Error('Failed to delete note');
+  }
+}

@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { 
   getCattle, addCattle, addInsemination, addVaccination, 
-  addNote, updateCattleType, deleteCattle 
+  addNote, updateCattleType, deleteCattle, deleteInsemination,
+  deleteVaccination, deleteNote
 } from '@/app/actions/cowActions';
 
 // --- TYPES & INTERFACES ---
@@ -84,7 +85,6 @@ export default function CowPage() {
   const [removeReason, setRemoveReason] = useState<"SOLD" | "OTHER">("SOLD");
   const [removeNotes, setRemoveNotes] = useState("");
 
-  // Load Data on Mount
   useEffect(() => {
     loadData();
   }, []);
@@ -94,9 +94,7 @@ export default function CowPage() {
     try {
       const data = (await getCattle()) as unknown as Cattle[];
       const cattleList = data || [];
-
       setCattles(cattleList);
-
       setSelectedCattle((prevSelected) => {
         if (!prevSelected) return null;
         return cattleList.find((c) => c.id === prevSelected.id) || null;
@@ -110,16 +108,10 @@ export default function CowPage() {
 
   function parseLocalDate(dateValue: string | Date | number) {
     if (!dateValue) return new Date();
+    if (dateValue instanceof Date) return new Date(dateValue.getTime());
+    if (typeof dateValue === "number") return new Date(dateValue);
 
-    if (dateValue instanceof Date) {
-      return new Date(dateValue.getTime());
-    }
-
-    if (typeof dateValue === "number") {
-      return new Date(dateValue);
-    }
-
-    const datePart = dateValue.slice(0, 10);
+    const datePart = dateValue.toString().slice(0, 10);
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
     if (match) {
       const [, year, month, day] = match;
@@ -201,10 +193,10 @@ export default function CowPage() {
     if (!selectedCattle) return;
     try {
       await deleteCattle(selectedCattle.id);
+      setCattles((prev) => prev.filter((c) => c.id !== selectedCattle.id));
       setSelectedCattle(null);
       setIsRemoveModalOpen(false);
       setRemoveNotes("");
-      await loadData();
     } catch (error) {
       console.error("Error removing cattle:", error);
     }
@@ -256,17 +248,17 @@ export default function CowPage() {
     }
   };
 
+  // --- INSEMINATION HANDLERS (SAVE, EDIT, DELETE) ---
   const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedCattle) return;
 
     try {
       await addInsemination(selectedCattle.id, newInsemDate);
-
       setNewInsemDate("");
       setEditingInsemId(null);
       setIsInseminationModalOpen(false);
-      await loadData();
+      await loadData(); // DB reload to reflect recalculated dates
     } catch (error) {
       console.error("Error saving insemination:", error);
     }
@@ -278,13 +270,37 @@ export default function CowPage() {
     setIsInseminationModalOpen(true);
   };
 
+  const handleDeleteInsemination = async (insemId: number) => {
+    if (!selectedCattle) return;
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteInsemination(insemId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setCattles((prevCattles) =>
+        prevCattles.map((cattle) =>
+          cattle.id === selectedCattle.id
+            ? { ...cattle, inseminations: cattle.inseminations.filter((i) => i.id !== insemId) }
+            : cattle
+        )
+      );
+
+      // 3. Keep selectedCattle synchronized
+      setSelectedCattle((prev) =>
+        prev ? { ...prev, inseminations: prev.inseminations.filter((i) => i.id !== insemId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting insemination:", error);
+    }
+  };
+
+  // --- VACCINE HANDLERS ---
   const handleSaveVaccine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vacName || !vacDate || !selectedCattle) return;
 
     try {
       await addVaccination(selectedCattle.id, vacName, vacDate, vacNotes);
-
       setVacName(""); 
       setVacDate(""); 
       setVacNotes(""); 
@@ -304,24 +320,37 @@ export default function CowPage() {
     setIsVaccineModalOpen(true);
   };
 
-  const handleDeleteVaccine = (vacId: number) => {
+  const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedCattle) return;
-    const updatedVaccinations = (selectedCattle.vaccinations || []).filter((vac) => vac.id !== vacId);
-    const updatedCattles = cattles.map((c) => {
-      if (c.id === selectedCattle.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-    setCattles(updatedCattles);
-    setSelectedCattle({ ...selectedCattle, vaccinations: updatedVaccinations });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteVaccination(vacId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setCattles((prevCattles) =>
+        prevCattles.map((cattle) =>
+          cattle.id === selectedCattle.id
+            ? { ...cattle, vaccinations: cattle.vaccinations.filter((v) => v.id !== vacId) }
+            : cattle
+        )
+      );
+
+      // 3. Keep selectedCattle synchronized
+      setSelectedCattle((prev) =>
+        prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting vaccine:", error);
+    }
   };
 
+  // --- NOTE HANDLERS ---
   const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteText || !selectedCattle) return;
 
     try {
       await addNote(selectedCattle.id, noteDate, noteText);
-
       setNoteText("");
       setNoteDate(new Date().toISOString().split("T")[0]);
       setEditingNoteId(null);
@@ -339,15 +368,28 @@ export default function CowPage() {
     setIsNoteModalOpen(true);
   };
 
-  const handleDeleteNote = (noteId: number) => {
+  const handleDeleteNote = async (noteId: number) => {
     if (!selectedCattle) return;
-    const updatedNotes = (selectedCattle.notes || []).filter((n) => n.id !== noteId);
-    const updatedCattles = cattles.map((c) => {
-      if (c.id === selectedCattle.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-    setCattles(updatedCattles);
-    setSelectedCattle({ ...selectedCattle, notes: updatedNotes });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteNote(noteId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setCattles((prevCattles) =>
+        prevCattles.map((cattle) =>
+          cattle.id === selectedCattle.id
+            ? { ...cattle, notes: cattle.notes.filter((n) => n.id !== noteId) }
+            : cattle
+        )
+      );
+
+      // 3. Keep selectedCattle synchronized
+      setSelectedCattle((prev) =>
+        prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting note:", error);
+    }
   };
 
   const filteredCattles = cattles.filter((item) => item.type === activeTab);
@@ -363,7 +405,7 @@ export default function CowPage() {
     >
       <div className="min-h-screen bg-black/20 backdrop-blur-[2px] p-[3vw] sm:p-6 lg:p-8">
         
-        {/* Dynamic Responsive Banner Header */}
+        {/* Banner Header */}
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-[3vw] sm:gap-4 mb-[3vw] sm:mb-8 bg-emerald-950/85 backdrop-blur-md p-[4vw] sm:p-6 rounded-[3vw] sm:rounded-3xl border border-emerald-800/50 shadow-xl text-white">
           <div className="space-y-[1vw] sm:space-y-1">
             <h1 className="text-[5vw] sm:text-2xl md:text-3xl font-extrabold text-emerald-300 flex items-center gap-[2vw] sm:gap-2">
@@ -384,7 +426,7 @@ export default function CowPage() {
           </button>
         </div>
 
-        {/* Dynamic Navigation Tabs */}
+        {/* Navigation Tabs */}
         <div className="max-w-7xl mx-auto mb-[3vw] sm:mb-6 flex bg-white/80 backdrop-blur-md rounded-[2.5vw] sm:rounded-2xl p-[1vw] sm:p-1.5 border border-white/60 shadow-md gap-[1.5vw] sm:gap-2">
           <button
             onClick={() => { setActiveTab("COW"); setSelectedCattle(null); }}
@@ -536,6 +578,13 @@ export default function CowPage() {
                                     className="flex-1 sm:flex-none text-[2.8vw] sm:text-xs text-emerald-700 hover:text-emerald-900 flex items-center justify-center gap-1 bg-white border border-emerald-200 p-2 sm:p-1.5 rounded-lg shadow-sm"
                                   >
                                     <Edit className="w-3.5 h-3.5"/> எடிட்
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteInsemination(insem.id)}
+                                    className="flex-1 sm:flex-none text-[2.8vw] sm:text-xs text-red-600 hover:bg-red-50 flex items-center justify-center gap-1 bg-white border border-red-200 p-2 sm:p-1.5 rounded-lg shadow-sm"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5"/> நீக்கு
                                   </button>
                                   
                                   <button
@@ -722,7 +771,7 @@ export default function CowPage() {
                     required
                     value={noteDate}
                     onChange={(e) => setNoteDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
                 <div>
@@ -733,7 +782,7 @@ export default function CowPage() {
                     rows={4}
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-emerald-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
@@ -761,7 +810,7 @@ export default function CowPage() {
                     placeholder="எ.கா: லட்சுமி (#02)"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-emerald-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
 
@@ -785,7 +834,7 @@ export default function CowPage() {
                     <select
                       value={newType}
                       onChange={(e) => setNewType(e.target.value as "COW" | "CALF")}
-                      className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white"
+                      className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white text-stone-800"
                     >
                       <option value="COW">மாடு</option>
                       <option value="CALF">கன்று</option>
@@ -796,7 +845,7 @@ export default function CowPage() {
                     <select
                       value={newSource}
                       onChange={(e) => setNewSource(e.target.value as "BORN_HERE" | "PURCHASED")}
-                      className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white"
+                      className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white text-stone-800"
                     >
                       <option value="BORN_HERE">பண்ணையில் பிறந்தவை</option>
                       <option value="PURCHASED">வாங்கப்பட்டது</option>
@@ -810,7 +859,7 @@ export default function CowPage() {
                     type="date"
                     value={newBirthDate}
                     onChange={(e) => setNewBirthDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
@@ -838,7 +887,7 @@ export default function CowPage() {
                     placeholder="எ.கா: சின்ன லட்சுமி"
                     value={calfName}
                     onChange={(e) => setCalfName(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-emerald-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
                 <div>
@@ -847,7 +896,7 @@ export default function CowPage() {
                     type="date"
                     value={calfBirthDate}
                     onChange={(e) => setCalfBirthDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
@@ -878,7 +927,7 @@ export default function CowPage() {
                     required
                     value={newInsemDate}
                     onChange={(e) => setNewInsemDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
                 {newInsemDate && (
@@ -914,7 +963,7 @@ export default function CowPage() {
                     placeholder="எ.கா: கோமாரி தடுப்பூசி (FMD)"
                     value={vacName}
                     onChange={(e) => setVacName(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-emerald-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
                 <div>
@@ -924,7 +973,7 @@ export default function CowPage() {
                     required
                     value={vacDate}
                     onChange={(e) => setVacDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
                 <div>
@@ -934,7 +983,7 @@ export default function CowPage() {
                     rows={3}
                     value={vacNotes}
                     onChange={(e) => setVacNotes(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-emerald-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
@@ -959,7 +1008,7 @@ export default function CowPage() {
                   <select
                     value={removeReason}
                     onChange={(e) => setRemoveReason(e.target.value as "SOLD" | "OTHER")}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm bg-white text-stone-800"
                   >
                     <option value="SOLD">விற்பனை செய்யப்பட்டது</option>
                     <option value="OTHER">மற்றவை</option>
@@ -972,7 +1021,7 @@ export default function CowPage() {
                     rows={3}
                     value={removeNotes}
                     onChange={(e) => setRemoveNotes(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm focus:outline-none focus:border-red-600"
+                    className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800 focus:outline-none focus:border-red-600"
                   />
                 </div>
                 <button type="submit" className="w-full bg-red-600 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-red-700 transition-all shadow-md">

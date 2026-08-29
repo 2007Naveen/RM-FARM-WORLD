@@ -74,7 +74,22 @@ export async function addGoatMating(goatId: number, date: string) {
   }
 }
 
-// 4. தடுப்பூசி பதிவு சேர்க்க
+// 4. சினைப் பதிவை நீக்க (DELETE MATING RECORD)
+export async function deleteGoatMating(matingId: number) {
+  try {
+    const deleted = await prisma.goatMating.delete({
+      where: { id: Number(matingId) },
+    });
+
+    revalidatePath('/goat');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting mating record:', error);
+    throw new Error('Failed to delete mating record');
+  }
+}
+
+// 5. தடுப்பூசி பதிவு சேர்க்க
 export async function addGoatVaccination(
   goatId: number,
   name: string,
@@ -99,7 +114,22 @@ export async function addGoatVaccination(
   }
 }
 
-// 5. குறிப்பு சேர்க்க
+// 6. தடுப்பூசி பதிவை நீக்க (DELETE VACCINATION)
+export async function deleteGoatVaccination(vaccineId: number) {
+  try {
+    const deleted = await prisma.goatVaccine.delete({
+      where: { id: Number(vaccineId) },
+    });
+
+    revalidatePath('/goat');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting vaccination:', error);
+    throw new Error('Failed to delete vaccination');
+  }
+}
+
+// 7. குறிப்பு சேர்க்க
 export async function addGoatNote(goatId: number, date: string, text: string) {
   try {
     const newNote = await prisma.goatNote.create({
@@ -118,7 +148,22 @@ export async function addGoatNote(goatId: number, date: string, text: string) {
   }
 }
 
-// 6. ஆட்டின் வகையை மாற்ற (GOAT <-> KID)
+// 8. குறிப்பை நீக்க (DELETE NOTE)
+export async function deleteGoatNote(noteId: number) {
+  try {
+    const deleted = await prisma.goatNote.delete({
+      where: { id: Number(noteId) },
+    });
+
+    revalidatePath('/goat');
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    throw new Error('Failed to delete note');
+  }
+}
+
+// 9. ஆட்டின் வகையை மாற்ற (GOAT <-> KID)
 export async function updateGoatType(goatId: number, type: 'GOAT' | 'KID') {
   try {
     const updated = await prisma.goat.update({
@@ -134,7 +179,7 @@ export async function updateGoatType(goatId: number, type: 'GOAT' | 'KID') {
   }
 }
 
-// 7. ஆட்டை நீக்க
+// 10. ஆட்டை நீக்க
 export async function deleteGoat(goatId: number) {
   try {
     const deleted = await prisma.goat.delete({

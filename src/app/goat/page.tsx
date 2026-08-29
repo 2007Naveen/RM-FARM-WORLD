@@ -3,12 +3,15 @@
 import React, { useEffect, useState } from "react";
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
-  Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
+  Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock, Loader2
 } from "lucide-react";
 import {
   getGoats,
   addGoat,
   addGoatMating,
+  deleteGoatMating,        
+  deleteGoatVaccination,   
+  deleteGoatNote,          
   addGoatVaccination,
   addGoatNote,
   updateGoatType,
@@ -55,7 +58,8 @@ interface Goat {
 function GoatPage() {
   const [activeTab, setActiveTab] = useState<"GOAT" | "KID">("GOAT");
   const [selectedGoat, setSelectedGoat] = useState<Goat | null>(null);
-  
+  const [isLoading, setIsLoading] = useState(false);
+
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isInseminationModalOpen, setIsInseminationModalOpen] = useState(false);
@@ -99,6 +103,7 @@ function GoatPage() {
   }, []);
 
   async function loadGoats() {
+    setIsLoading(true);
     try {
       const rawData = (await getGoats()) as unknown as Array<{
         id: number;
@@ -138,6 +143,8 @@ function GoatPage() {
       });
     } catch (error) {
       console.error("Error loading goats:", error);
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -173,7 +180,6 @@ function GoatPage() {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Calculate Elapsed and Remaining Days (Goat gestation is ~150 days)
   function getInseminationDaysInfo(insemDateStr: string | Date | number | null | undefined) {
     if (!insemDateStr) return { daysPassed: 0, daysRemaining: 150 };
     
@@ -193,7 +199,6 @@ function GoatPage() {
     };
   }
 
-  // Image Upload Handler
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -205,7 +210,6 @@ function GoatPage() {
     }
   };
 
-  // Goat pregnancy duration = 150 days
   function calculateDeliveryDate(dateStr: string | Date | number | null | undefined): string {
     if (!dateStr) return "";
     const date = parseLocalDate(dateStr);
@@ -279,7 +283,6 @@ function GoatPage() {
     }
   };
 
-  // Multiple Kids Birth Logic Handler
   const handleKidBirth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGoat) return;
@@ -325,6 +328,7 @@ function GoatPage() {
     setKidNames(updated);
   };
 
+  // சினை பதிவு சேர்த்தல் மற்றும் மாற்றியமைத்தல் (Save / Update Insemination)
   const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedGoat) return;
@@ -336,6 +340,31 @@ function GoatPage() {
       await loadGoats();
     } catch (error) {
       console.error("Error saving mating record:", error);
+    }
+  };
+
+  // சினை பதிவை நீக்குவதற்கான ஃபங்க்ஷன் (Delete Insemination)
+  const handleDeleteInsemination = async (insemId: number) => {
+    if (!selectedGoat) return;
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteGoatMating(insemId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setGoats((prevGoats) =>
+        prevGoats.map((goat) =>
+          goat.id === selectedGoat.id
+            ? { ...goat, inseminations: goat.inseminations.filter((i) => i.id !== insemId) }
+            : goat
+        )
+      );
+
+      // 3. Keep selectedGoat synchronized
+      setSelectedGoat((prev) =>
+        prev ? { ...prev, inseminations: prev.inseminations.filter((i) => i.id !== insemId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting insemination:", error);
     }
   };
 
@@ -366,15 +395,28 @@ function GoatPage() {
     setIsVaccineModalOpen(true);
   };
 
-  const handleDeleteVaccine = (vacId: number) => {
+  const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedGoat) return;
-    const updatedVaccinations = selectedGoat.vaccinations.filter((vac) => vac.id !== vacId);
-    const updatedGoats = goats.map((c) => {
-      if (c.id === selectedGoat.id) return { ...c, vaccinations: updatedVaccinations };
-      return c;
-    });
-    setGoats(updatedGoats);
-    setSelectedGoat({ ...selectedGoat, vaccinations: updatedVaccinations });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteGoatVaccination(vacId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setGoats((prevGoats) =>
+        prevGoats.map((goat) =>
+          goat.id === selectedGoat.id
+            ? { ...goat, vaccinations: goat.vaccinations.filter((v) => v.id !== vacId) }
+            : goat
+        )
+      );
+
+      // 3. Keep selectedGoat synchronized
+      setSelectedGoat((prev) =>
+        prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting vaccine:", error);
+    }
   };
 
   const handleSaveNote = async (e: React.FormEvent) => {
@@ -399,15 +441,28 @@ function GoatPage() {
     setIsNoteModalOpen(true);
   };
 
-  const handleDeleteNote = (noteId: number) => {
+  const handleDeleteNote = async (noteId: number) => {
     if (!selectedGoat) return;
-    const updatedNotes = (selectedGoat.notes || []).filter((n) => n.id !== noteId);
-    const updatedGoats = goats.map((c) => {
-      if (c.id === selectedGoat.id) return { ...c, notes: updatedNotes };
-      return c;
-    });
-    setGoats(updatedGoats);
-    setSelectedGoat({ ...selectedGoat, notes: updatedNotes });
+    try {
+      // 1. Call the server action to persist deletion in the database
+      await deleteGoatNote(noteId);
+      
+      // 2. Update local state immediately so it stays deleted on refresh
+      setGoats((prevGoats) =>
+        prevGoats.map((goat) =>
+          goat.id === selectedGoat.id
+            ? { ...goat, notes: goat.notes.filter((n) => n.id !== noteId) }
+            : goat
+        )
+      );
+
+      // 3. Keep selectedGoat synchronized
+      setSelectedGoat((prev) =>
+        prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
+      );
+    } catch (error) {
+      console.error("Error deleting note:", error);
+    }
   };
 
   const filteredGoats = goats.filter((item) => item.type === activeTab);
@@ -420,7 +475,7 @@ function GoatPage() {
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] pointer-events-none" />
 
       <div className="relative z-10 min-h-screen p-[3vw] sm:p-6 lg:p-8">
-        {/* Top Header Card */}
+        {/* Header Section */}
         <div className="max-w-7xl mx-auto bg-[#064e3b] text-white p-[4vw] sm:p-6 rounded-[3vw] sm:rounded-2xl shadow-lg mb-[3vw] sm:mb-6 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-[3vw] sm:gap-4">
           <div>
             <h1 className="text-[5vw] sm:text-2xl md:text-3xl font-bold flex items-center gap-[2vw] sm:gap-2">
@@ -430,12 +485,15 @@ function GoatPage() {
               சினை ஓடி கணக்கு (150 நாட்கள்), தடுப்பூசி & ஆட்டின் பொதுக் குறிப்புகள்
             </p>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center justify-center gap-1.5 bg-[#10b981]/20 hover:bg-[#10b981]/30 text-emerald-300 border border-emerald-500/30 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[2.7vw] sm:text-sm font-medium transition-all shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5 sm:w-5 sm:h-5"/> புதிய ஆடு / குட்டி சேர்க்க
-          </button>
+          <div className="flex items-center gap-2">
+            {isLoading && <Loader2 className="w-5 h-5 animate-spin text-emerald-300" />}
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center justify-center gap-1.5 bg-[#10b981]/20 hover:bg-[#10b981]/30 text-emerald-300 border border-emerald-500/30 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[2.7vw] sm:text-sm font-medium transition-all shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5 sm:w-5 sm:h-5"/> புதிய ஆடு / குட்டி சேர்க்க
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
@@ -597,6 +655,14 @@ function GoatPage() {
                                     <Edit className="w-3.5 h-3.5"/> எடிட்
                                   </button>
                                   
+                                  {/* Delete Insemination Button */}
+                                  <button
+                                    onClick={() => handleDeleteInsemination(insem.id)}
+                                    className="flex-1 sm:flex-none text-[2.5vw] sm:text-xs text-red-600 hover:text-red-800 flex items-center gap-1 bg-white border border-red-200 p-1.5 rounded-lg justify-center"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5"/> நீக்கு
+                                  </button>
+
                                   <button
                                     onClick={() => setIsKidBirthModalOpen(true)}
                                     className="flex-1 sm:flex-none text-[2.5vw] sm:text-xs bg-emerald-700 text-white px-2 py-1.5 rounded-lg hover:bg-emerald-800 transition-all font-semibold"
@@ -606,8 +672,8 @@ function GoatPage() {
                                 </div>
                               </div>
 
-                              {/* Dynamic Days Counter Box */}
-                              <div className="mb-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-2.5 sm:p-3.5 rounded-xl shadow-sm flex items-center justify-around gap-1 text-center">
+                              {/* Days Counter Box */}
+                              <div className="my-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-2.5 sm:p-3.5 rounded-xl shadow-sm flex items-center justify-around gap-1 text-center">
                                 <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
                                   <Clock className="w-5 h-5 text-emerald-200"/>
                                   <div>
@@ -642,7 +708,7 @@ function GoatPage() {
                     </div>
                   )}
 
-                  {/* Vaccine Notes Section */}
+                  {/* Vaccines Section */}
                   <div className="mb-8">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
                       <h3 className="font-bold text-[3.2vw] sm:text-lg text-emerald-900 flex items-center gap-1.5">
@@ -703,7 +769,7 @@ function GoatPage() {
                     )}
                   </div>
 
-                  {/* General Goat Notes Section */}
+                  {/* Notes Section */}
                   <div>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
                       <h3 className="font-bold text-[3.2vw] sm:text-lg text-emerald-900 flex items-center gap-1.5">
@@ -734,14 +800,12 @@ function GoatPage() {
                               <button
                                 onClick={() => handleEditNote(note)}
                                 className="p-1 text-emerald-700 hover:bg-emerald-100/60 rounded-md"
-                                title="குறிப்பை மாற்றுக"
                               >
                                 <Edit className="w-4 h-4"/>
                               </button>
                               <button
                                 onClick={() => handleDeleteNote(note.id)}
                                 className="p-1 text-red-600 hover:bg-red-100/60 rounded-md"
-                                title="நீக்குக"
                               >
                                 <Trash2 className="w-4 h-4"/>
                               </button>
@@ -753,7 +817,6 @@ function GoatPage() {
                       <p className="text-sm text-gray-500 italic">பொதுக் குறிப்புகள் எதுவும் பதிவு செய்யப்படவில்லை.</p>
                     )}
                   </div>
-
                 </div>
               </div>
             ) : (
@@ -765,7 +828,44 @@ function GoatPage() {
           </div>
         </div>
 
-        {/* Modal: Add or Edit Note */}
+        {/* Modal: Add or Edit Insemination */}
+        {isInseminationModalOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+              <div className="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 className="text-lg font-bold text-emerald-950">
+                  {editingInsemId ? "சினை தேதியை மாற்று" : "சினை / இணைப்பு பதிவு சேர்க்க"}
+                </h3>
+                <button onClick={() => setIsInseminationModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+              </div>
+              <form onSubmit={handleSaveInsemination} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {editingInsemId ? "புதிய சினை/இணைப்பு தேதி" : "சினை/இணைப்பு போட்ட தேதி"}
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newInsemDate}
+                    onChange={(e) => setNewInsemDate(e.target.value)}
+                    className="w-full border rounded-xl p-2.5 text-sm"
+                  />
+                </div>
+                {newInsemDate && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <p className="text-xs text-emerald-800 font-semibold">எதிர்பார்க்கப்படும் ஈனும் தேதி (+150 நாட்கள்):</p>
+                    <p className="font-extrabold text-emerald-950 text-base">{calculateDeliveryDate(newInsemDate)}</p>
+                  </div>
+                )}
+                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                  {editingInsemId ? "தேதியை புதுப்பி" : "பதிவு செய்"}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Note, Vaccine, Goat Add/Remove Modals */}
         {isNoteModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -805,7 +905,6 @@ function GoatPage() {
           </div>
         )}
 
-        {/* Modal: Add Goat/Kid */}
         {isAddModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -865,7 +964,6 @@ function GoatPage() {
                   </div>
                 </div>
 
-                {/* Mother Selection if adding a Kid manually */}
                 {newType === "KID" && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">தாய் ஆடு (Mother Goat)</label>
@@ -899,7 +997,6 @@ function GoatPage() {
           </div>
         )}
 
-        {/* Modal: Multiple Kids Birth Registration */}
         {isKidBirthModalOpen && selectedGoat && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200">
@@ -928,13 +1025,13 @@ function GoatPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    குட்டிகளின் பெயர்கள் / Tag Nos (விருப்பத்தின் பேரில்)
+                    குட்டிகளின் பெயர்கள் / Tag Nos
                   </label>
                   {Array.from({ length: kidsCount }).map((_, idx) => (
                     <input
                       key={idx}
                       type="text"
-                      placeholder={`குட்டி ${idx + 1} பெயர் (எ.கா: ${selectedGoat.name} - குட்டி ${idx + 1})`}
+                      placeholder={`குட்டி ${idx + 1} பெயர்`}
                       value={kidNames[idx] || ""}
                       onChange={(e) => handleKidNameChange(idx, e.target.value)}
                       className="w-full border rounded-xl p-2.5 text-sm mb-2 focus:outline-none focus:border-emerald-600"
@@ -960,44 +1057,6 @@ function GoatPage() {
           </div>
         )}
 
-        {/* Modal: Add or Edit Insemination */}
-        {isInseminationModalOpen && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-              <div className="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 className="text-lg font-bold text-emerald-950">
-                  {editingInsemId ? "சினை தேதியை மாற்று" : "சினை / இணைப்பு பதிவு சேர்க்க"}
-                </h3>
-                <button onClick={() => setIsInseminationModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
-              </div>
-              <form onSubmit={handleSaveInsemination} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    {editingInsemId ? "புதிய சினை/இணைப்பு தேதி" : "சினை/இணைப்பு போட்ட தேதி"}
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={newInsemDate}
-                    onChange={(e) => setNewInsemDate(e.target.value)}
-                    className="w-full border rounded-xl p-2.5 text-sm"
-                  />
-                </div>
-                {newInsemDate && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <p className="text-xs text-emerald-800 font-semibold">எதிர்பார்க்கப்படும் ஈனும் தேதி (+150 நாட்கள்):</p>
-                    <p className="font-extrabold text-emerald-950 text-base">{calculateDeliveryDate(newInsemDate)}</p>
-                  </div>
-                )}
-                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
-                  {editingInsemId ? "தேதியை புதுப்பி" : "பதிவு செய்"}
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal: Add or Edit Vaccine */}
         {isVaccineModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -1047,7 +1106,6 @@ function GoatPage() {
           </div>
         )}
 
-        {/* Modal: Remove Goat */}
         {isRemoveModalOpen && selectedGoat && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -1088,4 +1146,5 @@ function GoatPage() {
     </div>
   );
 }
+
 export default GoatPage;
