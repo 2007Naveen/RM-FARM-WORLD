@@ -178,6 +178,26 @@ export async function updateGoatType(goatId: number, type: 'GOAT' | 'KID') {
     throw new Error('Failed to update goat type');
   }
 }
+// goatActions.ts கோப்பில் சேர்க்கப்பட வேண்டிய ஃபங்ஷன்
+export async function updateGoatDetails(
+  id: number,
+  data: {
+    name?: string;
+    type?: "GOAT" | "KID";
+    birthDate?: string;
+    source?: "BORN_HERE" | "PURCHASED";
+    photoUrl?: string;
+    motherId?: number;
+  }
+) {
+  return await prisma.goat.update({
+    where: { id },
+    data: {
+      ...data,
+      birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+    },
+  });
+}
 
 // 10. ஆட்டை நீக்க
 export async function deleteGoat(goatId: number) {

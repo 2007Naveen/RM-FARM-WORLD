@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
-  Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock, Loader2
+  Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock, Loader2
 } from "lucide-react";
 import {
   getGoats,
@@ -16,6 +16,7 @@ import {
   addGoatNote,
   updateGoatType,
   deleteGoat,
+  updateGoatDetails,
 } from "@/app/actions/goatActions";
 
 // --- TYPES & INTERFACES ---
@@ -62,6 +63,7 @@ function GoatPage() {
 
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditGoatModalOpen, setIsEditGoatModalOpen] = useState(false);
   const [isInseminationModalOpen, setIsInseminationModalOpen] = useState(false);
   const [isVaccineModalOpen, setIsVaccineModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
@@ -75,6 +77,14 @@ function GoatPage() {
   const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
   const [selectedMotherForNew, setSelectedMotherForNew] = useState<number | "">("");
   const [photoBase64, setPhotoBase64] = useState<string>("");
+
+  // Edit Goat Form States
+  const [editName, setEditName] = useState("");
+  const [editType, setEditType] = useState<"GOAT" | "KID">("GOAT");
+  const [editBirthDate, setEditBirthDate] = useState("");
+  const [editSource, setEditSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
+  const [editMotherId, setEditMotherId] = useState<number | "">("");
+  const [editPhotoBase64, setEditPhotoBase64] = useState<string>("");
 
   // Multiple Kids Birth State
   const [kidsCount, setKidsCount] = useState<number>(1);
@@ -199,12 +209,16 @@ function GoatPage() {
     };
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPhotoBase64(reader.result as string);
+        if (isEdit) {
+          setEditPhotoBase64(reader.result as string);
+        } else {
+          setPhotoBase64(reader.result as string);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -243,6 +257,35 @@ function GoatPage() {
       await loadGoats();
     } catch (error) {
       console.error("Error converting kid to goat:", error);
+    }
+  };
+
+  const handleOpenEditModal = (goat: Goat) => {
+    setEditName(goat.name);
+    setEditType(goat.type);
+    setEditBirthDate(formatDateValue(goat.birthDate));
+    setEditSource(goat.source);
+    setEditMotherId(goat.motherId || "");
+    setEditPhotoBase64(goat.photoUrl || "");
+    setIsEditGoatModalOpen(true);
+  };
+
+  const handleUpdateGoat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGoat || !editName) return;
+    try {
+      await updateGoatDetails(selectedGoat.id, {
+        name: editName,
+        type: editType,
+        birthDate: editBirthDate,
+        source: editSource,
+        photoUrl: editPhotoBase64 ? editPhotoBase64 : undefined,
+        motherId: editType === "KID" && editMotherId ? Number(editMotherId) : undefined,
+      });
+      setIsEditGoatModalOpen(false);
+      await loadGoats();
+    } catch (error) {
+      console.error("Error updating goat details:", error);
     }
   };
 
@@ -308,7 +351,7 @@ function GoatPage() {
       console.error("Error adding kids:", error);
     }
   };
-// kannukutty count 
+
   const handleKidsCountChange = (count: number) => {
     setKidsCount(count);
     setKidNames((prev) => {
@@ -328,7 +371,6 @@ function GoatPage() {
     setKidNames(updated);
   };
 
-  // சினை பதிவு சேர்த்தல் மற்றும் மாற்றியமைத்தல் (Save / Update Insemination)
   const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedGoat) return;
@@ -343,14 +385,10 @@ function GoatPage() {
     }
   };
 
-  // சினை பதிவை நீக்குவதற்கான ஃபங்க்ஷன் (Delete Insemination)
   const handleDeleteInsemination = async (insemId: number) => {
     if (!selectedGoat) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteGoatMating(insemId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setGoats((prevGoats) =>
         prevGoats.map((goat) =>
           goat.id === selectedGoat.id
@@ -358,8 +396,6 @@ function GoatPage() {
             : goat
         )
       );
-
-      // 3. Keep selectedGoat synchronized
       setSelectedGoat((prev) =>
         prev ? { ...prev, inseminations: prev.inseminations.filter((i) => i.id !== insemId) } : null
       );
@@ -398,10 +434,7 @@ function GoatPage() {
   const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedGoat) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteGoatVaccination(vacId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setGoats((prevGoats) =>
         prevGoats.map((goat) =>
           goat.id === selectedGoat.id
@@ -409,8 +442,6 @@ function GoatPage() {
             : goat
         )
       );
-
-      // 3. Keep selectedGoat synchronized
       setSelectedGoat((prev) =>
         prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
       );
@@ -444,10 +475,7 @@ function GoatPage() {
   const handleDeleteNote = async (noteId: number) => {
     if (!selectedGoat) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteGoatNote(noteId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setGoats((prevGoats) =>
         prevGoats.map((goat) =>
           goat.id === selectedGoat.id
@@ -455,8 +483,6 @@ function GoatPage() {
             : goat
         )
       );
-
-      // 3. Keep selectedGoat synchronized
       setSelectedGoat((prev) =>
         prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
       );
@@ -575,6 +601,13 @@ function GoatPage() {
                   </div>
                   
                   <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                    <button
+                      onClick={() => handleOpenEditModal(selectedGoat)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all shadow-sm"
+                    >
+                      <Edit className="w-4 h-4"/> திருத்து (Edit)
+                    </button>
+
                     {selectedGoat.type === "KID" && (
                       <button
                         onClick={() => handleConvertToGoat(selectedGoat.id)}
@@ -655,7 +688,6 @@ function GoatPage() {
                                     <Edit className="w-3.5 h-3.5"/> எடிட்
                                   </button>
                                   
-                                  {/* Delete Insemination Button */}
                                   <button
                                     onClick={() => handleDeleteInsemination(insem.id)}
                                     className="flex-1 sm:flex-none text-[2.5vw] sm:text-xs text-red-600 hover:text-red-800 flex items-center gap-1 bg-white border border-red-200 p-1.5 rounded-lg justify-center"
@@ -828,7 +860,99 @@ function GoatPage() {
           </div>
         </div>
 
-        {/* Modal: Add or Edit Insemination */}
+        {/* Modal: Edit Goat Details */}
+        {isEditGoatModalOpen && selectedGoat && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+              <div className="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 className="text-lg font-bold text-emerald-950">ஆட்டின் விவரங்களை திருத்து</h3>
+                <button onClick={() => setIsEditGoatModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+              </div>
+              <form onSubmit={handleUpdateGoat} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">பெயர் / Tag No</label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">புகைப்படம் மாற்று</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
+                      <Upload className="w-4 h-4 text-emerald-700"/>
+                      <span className="text-xs text-emerald-800 font-semibold">புதிய படம் பதிவேற்ற</span>
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                    </label>
+                    {editPhotoBase64 && (
+                      <img src={editPhotoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">வகை</label>
+                    <select
+                      value={editType}
+                      onChange={(e) => setEditType(e.target.value as "GOAT" | "KID")}
+                      className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                    >
+                      <option value="GOAT">பெரிய ஆடு</option>
+                      <option value="KID">குட்டி</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">மூலம்</label>
+                    <select
+                      value={editSource}
+                      onChange={(e) => setEditSource(e.target.value as "BORN_HERE" | "PURCHASED")}
+                      className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                    >
+                      <option value="BORN_HERE">பண்ணையில் பிறந்தவை</option>
+                      <option value="PURCHASED">வாங்கப்பட்டது</option>
+                    </select>
+                  </div>
+                </div>
+
+                {editType === "KID" && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">தாய் ஆடு (Mother Goat)</label>
+                    <select
+                      value={editMotherId}
+                      onChange={(e) => setEditMotherId(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                    >
+                      <option value="">-- தாய் ஆட்டை தேர்வு செய்யவும் (Optional) --</option>
+                      {goats.filter(g => g.type === "GOAT" && g.id !== selectedGoat.id).map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">பிறந்த தேதி</label>
+                  <input
+                    type="date"
+                    value={editBirthDate}
+                    onChange={(e) => setEditBirthDate(e.target.value)}
+                    className="w-full border rounded-xl p-2.5 text-sm"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                  மாற்றங்களை சேமிக்க
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Add Insemination */}
         {isInseminationModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -865,7 +989,7 @@ function GoatPage() {
           </div>
         )}
 
-        {/* Modal: Note, Vaccine, Goat Add/Remove Modals */}
+        {/* Modal: Note */}
         {isNoteModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -905,6 +1029,7 @@ function GoatPage() {
           </div>
         )}
 
+        {/* Modal: Add Goat */}
         {isAddModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -931,7 +1056,7 @@ function GoatPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-xs text-emerald-800 font-semibold">படத்தை பதிவேற்றவும்</span>
-                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} className="hidden" />
                     </label>
                     {photoBase64 && (
                       <img src={photoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -997,6 +1122,7 @@ function GoatPage() {
           </div>
         )}
 
+        {/* Modal: Kid Birth */}
         {isKidBirthModalOpen && selectedGoat && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200">
@@ -1057,6 +1183,7 @@ function GoatPage() {
           </div>
         )}
 
+        {/* Modal: Vaccine */}
         {isVaccineModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -1106,6 +1233,7 @@ function GoatPage() {
           </div>
         )}
 
+        {/* Modal: Remove Goat */}
         {isRemoveModalOpen && selectedGoat && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
