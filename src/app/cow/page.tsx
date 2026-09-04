@@ -1,12 +1,13 @@
 'use client';
-// Headers 
+
+import './cow.css';
 import { useEffect, useState } from 'react';
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
 } from 'lucide-react';
 import { 
-  getCattle, addCattle, addInsemination, addVaccination, 
+  getCattle, addCattle, updateCattle, addInsemination, addVaccination, 
   addNote, updateCattleType, deleteCattle, deleteInsemination,
   deleteVaccination, deleteNote
 } from '@/app/actions/cowActions';
@@ -36,7 +37,7 @@ interface Cattle {
   name: string;
   type: "COW" | "CALF";
   photoUrl?: string;
-  birthDate: string;
+  birthDate: string | Date;
   source: "BORN_HERE" | "PURCHASED";
   motherId?: number;
   inseminations: Insemination[];
@@ -61,6 +62,7 @@ export default function CowPage() {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
 
   // Form States
+  const [editingCattleId, setEditingCattleId] = useState<number | null>(null);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"COW" | "CALF">("COW");
   const [newBirthDate, setNewBirthDate] = useState("");
@@ -202,27 +204,54 @@ export default function CowPage() {
     }
   };
 
-  const handleAddCattle = async (e: React.FormEvent) => {
+  const handleEditCattle = (cattle: Cattle) => {
+    setEditingCattleId(cattle.id);
+    setNewName(cattle.name);
+    setNewType(cattle.type);
+    
+    // Safely parse Date object or String to YYYY-MM-DD
+    const formattedBirthDate = cattle.birthDate 
+      ? new Date(cattle.birthDate).toISOString().split('T')[0] 
+      : '';
+      
+    setNewBirthDate(formattedBirthDate);
+    setNewSource(cattle.source);
+    setPhotoBase64(cattle.photoUrl || '');
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveOrUpdateCattle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
     const today = new Date().toISOString().split("T")[0];
-    
+
     try {
-      await addCattle({
-        name: newName,
-        type: newType,
-        birthDate: newBirthDate || today,
-        source: newSource,
-        photoUrl: photoBase64 || undefined
-      });
+      if (editingCattleId) {
+        await updateCattle(editingCattleId, {
+          name: newName,
+          type: newType,
+          birthDate: newBirthDate || today,
+          source: newSource,
+          photoUrl: photoBase64 || undefined
+        });
+      } else {
+        await addCattle({
+          name: newName,
+          type: newType,
+          birthDate: newBirthDate || today,
+          source: newSource,
+          photoUrl: photoBase64 || undefined
+        });
+      }
 
       setNewName("");
       setPhotoBase64("");
       setNewBirthDate("");
+      setEditingCattleId(null);
       setIsAddModalOpen(false);
       await loadData();
     } catch (error) {
-      console.error("Error adding cattle:", error);
+      console.error("Error saving or updating cattle:", error);
     }
   };
 
@@ -248,7 +277,7 @@ export default function CowPage() {
     }
   };
 
-  // --- INSEMINATION HANDLERS (SAVE, EDIT, DELETE) ---
+  // --- INSEMINATION HANDLERS ---
   const handleSaveInsemination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInsemDate || !selectedCattle) return;
@@ -258,7 +287,7 @@ export default function CowPage() {
       setNewInsemDate("");
       setEditingInsemId(null);
       setIsInseminationModalOpen(false);
-      await loadData(); // DB reload to reflect recalculated dates
+      await loadData();
     } catch (error) {
       console.error("Error saving insemination:", error);
     }
@@ -273,10 +302,7 @@ export default function CowPage() {
   const handleDeleteInsemination = async (insemId: number) => {
     if (!selectedCattle) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteInsemination(insemId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setCattles((prevCattles) =>
         prevCattles.map((cattle) =>
           cattle.id === selectedCattle.id
@@ -284,8 +310,6 @@ export default function CowPage() {
             : cattle
         )
       );
-
-      // 3. Keep selectedCattle synchronized
       setSelectedCattle((prev) =>
         prev ? { ...prev, inseminations: prev.inseminations.filter((i) => i.id !== insemId) } : null
       );
@@ -323,10 +347,7 @@ export default function CowPage() {
   const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedCattle) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteVaccination(vacId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setCattles((prevCattles) =>
         prevCattles.map((cattle) =>
           cattle.id === selectedCattle.id
@@ -334,8 +355,6 @@ export default function CowPage() {
             : cattle
         )
       );
-
-      // 3. Keep selectedCattle synchronized
       setSelectedCattle((prev) =>
         prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
       );
@@ -371,10 +390,7 @@ export default function CowPage() {
   const handleDeleteNote = async (noteId: number) => {
     if (!selectedCattle) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteNote(noteId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
       setCattles((prevCattles) =>
         prevCattles.map((cattle) =>
           cattle.id === selectedCattle.id
@@ -382,8 +398,6 @@ export default function CowPage() {
             : cattle
         )
       );
-
-      // 3. Keep selectedCattle synchronized
       setSelectedCattle((prev) =>
         prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
       );
@@ -418,7 +432,13 @@ export default function CowPage() {
           </div>
 
           <button
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => {
+              setEditingCattleId(null);
+              setNewName("");
+              setNewBirthDate("");
+              setPhotoBase64("");
+              setIsAddModalOpen(true);
+            }}
             className="flex items-center justify-center gap-[2vw] sm:gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-[4vw] sm:px-5 py-[2.5vw] sm:py-3 rounded-[2vw] sm:rounded-xl text-[3.2vw] sm:text-sm font-medium shadow-lg transition-all shrink-0"
           >
             <Plus className="w-[4vw] h-[4vw] sm:w-5 sm:h-5"/> 
@@ -504,6 +524,14 @@ export default function CowPage() {
                         <ArrowRightLeft className="w-4 h-4"/> மாடாக மாற்று
                       </button>
                     )}
+
+                    {/* Orange Edit Button */}
+                    <button
+                      onClick={() => handleEditCattle(selectedCattle)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl text-[2.8vw] sm:text-xs font-semibold transition-all shadow-sm"
+                    >
+                      <Edit className="w-4 h-4"/> திருத்து
+                    </button>
 
                     <button
                       onClick={() => setIsRemoveModalOpen(true)}
@@ -755,8 +783,8 @@ export default function CowPage() {
 
         {/* Modal: Add or Edit Note */}
         {isNoteModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">
                   {editingNoteId ? "குறிப்பினை திருத்துக (Edit Note)" : "மாட்டின் குறிப்பு சேர்க்க"}
@@ -793,15 +821,19 @@ export default function CowPage() {
           </div>
         )}
 
-        {/* Modal: Add Cattle */}
+        {/* Modal: Add or Edit Cattle */}
         {isAddModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
-                <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">புதிய விலங்கு சேர்க்க</h3>
-                <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-stone-400 hover:text-stone-700"/></button>
+                <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">
+                  {editingCattleId ? "மாடு/கன்று விவரங்களை மாற்று" : "புதிய விலங்கு சேர்க்க"}
+                </h3>
+                <button onClick={() => { setIsAddModalOpen(false); setEditingCattleId(null); }}>
+                  <X className="w-5 h-5 text-stone-400 hover:text-stone-700"/>
+                </button>
               </div>
-              <form onSubmit={handleAddCattle} className="space-y-4">
+              <form onSubmit={handleSaveOrUpdateCattle} className="space-y-4">
                 <div>
                   <label className="block text-[2.8vw] sm:text-xs font-bold text-stone-700 mb-1">பெயர் / Tag No</label>
                   <input
@@ -863,7 +895,7 @@ export default function CowPage() {
                   />
                 </div>
                 <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
-                  சேமிக்க
+                  {editingCattleId ? "விவரங்களை புதுப்பி" : "சேமிக்க"}
                 </button>
               </form>
             </div>
@@ -872,8 +904,8 @@ export default function CowPage() {
 
         {/* Modal: Calf Birth */}
         {isCalfBirthModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">புதிய கன்றுக் குட்டி பதிவு</h3>
                 <button onClick={() => setIsCalfBirthModalOpen(false)}><X className="w-5 h-5 text-stone-400 hover:text-stone-700"/></button>
@@ -909,8 +941,8 @@ export default function CowPage() {
 
         {/* Modal: Add or Edit Insemination */}
         {isInseminationModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">
                   {editingInsemId ? "சினை ஊசி தேதியை மாற்று" : "சினை ஊசி பதிவு சேர்க்க"}
@@ -946,8 +978,8 @@ export default function CowPage() {
 
         {/* Modal: Add or Edit Vaccine */}
         {isVaccineModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">
                   {editingVacId ? "தடுப்பூசி விபரங்களை மாற்று" : "தடுப்பூசி குறிப்பு சேர்க்க"}
@@ -996,8 +1028,8 @@ export default function CowPage() {
 
         {/* Modal: Remove Cattle */}
         {isRemoveModalOpen && selectedCattle && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-[4vw] sm:p-4 z-50">
-            <div className="bg-white rounded-[3vw] sm:rounded-3xl p-[5vw] sm:p-6 w-full max-w-md shadow-2xl border border-white/40 space-y-4">
+          <div className="cow-modal-overlay">
+            <div className="cow-modal-box space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-[4vw] sm:text-lg font-bold text-red-950">{selectedCattle.name} - நீக்கம் செய்க</h3>
                 <button onClick={() => setIsRemoveModalOpen(false)}><X className="w-5 h-5 text-stone-400 hover:text-stone-700"/></button>

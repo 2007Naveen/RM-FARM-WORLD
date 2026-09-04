@@ -93,7 +93,21 @@ export async function addVaccination(
     throw new Error('Failed to add vaccination');
   }
 }
-
+export async function updateCattle(
+  id: number,
+  data: {
+    name: string;
+    type: "COW" | "CALF";
+    birthDate: string;
+    source: "BORN_HERE" | "PURCHASED";
+    photoUrl?: string;
+  }
+) {
+  return await prisma.cattle.update({
+    where: { id },
+    data,
+  });
+}
 export async function addNote(cattleId: number, date: string, text: string) {
   try {
     const newNote = await prisma.cattleNote.create({
