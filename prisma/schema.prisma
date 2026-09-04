@@ -1,16 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
-  
 }
 
-generator client {
-  provider        = "prisma-client-js"
-  
+model Cattle {
+  id            Int             @id @default(autoincrement())
+  name          String
+  type          AnimalType      @default(COW)
+  photoUrl      String?
+  birthDate     DateTime
+  source        AnimalSource    @default(BORN_HERE)
+  motherId      Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  mother        Cattle?         @relation("CattleHierarchy", fields: [motherId], references: [id])
+  calves        Cattle[]        @relation("CattleHierarchy")
+  notes         CattleNote[]
+  vaccinations  CattleVaccine[]
+  inseminations Insemination[]
 }
 
-// ==========================================
-// ENUMS
-// ==========================================
+model Insemination {
+  id                   Int      @id @default(autoincrement())
+  cattleId             Int
+  inseminationDate     DateTime
+  expectedDeliveryDate DateTime
+  createdAt            DateTime @default(now())
+  cattle               Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+}
+
+model CattleVaccine {
+  id          Int      @id @default(autoincrement())
+  cattleId    Int
+  name        String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  cattle      Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+}
+
+model CattleNote {
+  id        Int      @id @default(autoincrement())
+  cattleId  Int
+  date      DateTime
+  text      String
+  createdAt DateTime @default(now())
+  cattle    Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+}
+
+model Hen {
+  id           Int              @id @default(autoincrement())
+  name         String
+  type         HenType          @default(HEN)
+  photoUrl     String?
+  birthDate    DateTime
+  source       AnimalSource     @default(BORN_HERE)
+  motherId     Int?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  mother       Hen?             @relation("HenHierarchy", fields: [motherId], references: [id])
+  chicks       Hen[]            @relation("HenHierarchy")
+  incubations  Incubation[]
+  notes        PoultryNote[]
+  vaccinations PoultryVaccine[]
+}
+
+model Incubation {
+  id                Int      @id @default(autoincrement())
+  henId             Int
+  startDate         DateTime
+  expectedHatchDate DateTime
+  eggCount          Int      @default(0)
+  createdAt         DateTime @default(now())
+  hen               Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
+}
+
+model PoultryVaccine {
+  id          Int      @id @default(autoincrement())
+  henId       Int
+  name        String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  hen         Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
+}
+
+model PoultryNote {
+  id        Int      @id @default(autoincrement())
+  henId     Int
+  date      DateTime
+  text      String
+  createdAt DateTime @default(now())
+  hen       Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
+}
+
+model Goat {
+  id            Int           @id @default(autoincrement())
+  name          String
+  type          GoatType      @default(GOAT)
+  photoUrl      String?
+  birthDate     DateTime
+  source        AnimalSource  @default(BORN_HERE)
+  motherId      Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  mother        Goat?         @relation("GoatHierarchy", fields: [motherId], references: [id])
+  kids          Goat[]        @relation("GoatHierarchy")
+  matingRecords GoatMating[]
+  notes         GoatNote[]
+  vaccinations  GoatVaccine[]
+}
+
+model GoatMating {
+  id                   Int      @id @default(autoincrement())
+  goatId               Int
+  matingDate           DateTime
+  expectedDeliveryDate DateTime
+  createdAt            DateTime @default(now())
+  goat                 Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
+}
+
+model GoatVaccine {
+  id          Int      @id @default(autoincrement())
+  goatId      Int
+  name        String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  goat        Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
+}
+
+model GoatNote {
+  id        Int      @id @default(autoincrement())
+  goatId    Int
+  date      DateTime
+  text      String
+  createdAt DateTime @default(now())
+  goat      Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
+}
+
+model DailyNote {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @default(now())
+  title     String
+  content   String
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
 enum AnimalType {
   COW
@@ -30,176 +170,4 @@ enum HenType {
 enum GoatType {
   GOAT
   KID
-}
-
-// ==========================================
-// 1. CATTLE MODULE (மாடுகள் & கன்றுகள்)
-// ==========================================
-
-model Cattle {
-  id            Int             @id @default(autoincrement())
-  name          String
-  type          AnimalType      @default(COW)
-  photoUrl      String?         @db.Text
-  birthDate     DateTime
-  source        AnimalSource    @default(BORN_HERE)
-  
-  // தாய்க்கோழி / தாய் மாடு இணைப்பு (Self-relation)
-  motherId      Int?
-  mother        Cattle?         @relation("CattleHierarchy", fields: [motherId], references: [id], onDelete: SetNull)
-  calves        Cattle[]        @relation("CattleHierarchy")
-
-  inseminations Insemination[]
-  vaccinations  CattleVaccine[]
-  notes         CattleNote[]
-
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-}
-
-model Insemination {
-  id                   Int      @id @default(autoincrement())
-  cattleId             Int
-  cattle               Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
-  inseminationDate     DateTime
-  expectedDeliveryDate DateTime
-  createdAt            DateTime @default(now())
-}
-
-model CattleVaccine {
-  id          Int      @id @default(autoincrement())
-  cattleId    Int
-  cattle      Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
-  name        String
-  date        DateTime
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-}
-
-model CattleNote {
-  id        Int      @id @default(autoincrement())
-  cattleId  Int
-  cattle    Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
-  date      DateTime
-  text      String   @db.Text
-  createdAt DateTime @default(now())
-}
-
-// ==========================================
-// 2. POULTRY MODULE (கோழிகள் மேலாண்மை)
-// ==========================================
-
-model Hen {
-  id           Int              @id @default(autoincrement())
-  name         String
-  type         HenType          @default(HEN)
-  photoUrl     String?          @db.Text
-  birthDate    DateTime
-  source       AnimalSource     @default(BORN_HERE)
-
-  motherId     Int?
-  mother       Hen?             @relation("HenHierarchy", fields: [motherId], references: [id], onDelete: SetNull)
-  chicks       Hen[]            @relation("HenHierarchy")
-
-  incubations  Incubation[]
-  vaccinations PoultryVaccine[]
-  notes        PoultryNote[]
-
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-}
-
-model Incubation {
-  id                Int      @id @default(autoincrement())
-  henId             Int
-  hen               Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
-  startDate         DateTime
-  expectedHatchDate DateTime
-  eggCount          Int      @default(0)
-  createdAt         DateTime @default(now())
-}
-
-model PoultryVaccine {
-  id          Int      @id @default(autoincrement())
-  henId       Int
-  hen         Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
-  name        String
-  date        DateTime
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-}
-
-model PoultryNote {
-  id        Int      @id @default(autoincrement())
-  henId     Int
-  hen       Hen      @relation(fields: [henId], references: [id], onDelete: Cascade)
-  date      DateTime
-  text      String   @db.Text
-  createdAt DateTime @default(now())
-}
-
-// ==========================================
-// 3. GOAT MODULE (வெள்ளாடுகள் & செம்மறியாடுகள்)
-// ==========================================
-
-model Goat {
-  id            Int           @id @default(autoincrement())
-  name          String
-  type          GoatType      @default(GOAT)
-  photoUrl      String?       @db.Text
-  birthDate     DateTime
-  source        AnimalSource  @default(BORN_HERE)
-
-  motherId      Int?
-  mother        Goat?         @relation("GoatHierarchy", fields: [motherId], references: [id], onDelete: SetNull)
-  kids          Goat[]        @relation("GoatHierarchy")
-
-  matingRecords GoatMating[]
-  vaccinations  GoatVaccine[]
-  notes         GoatNote[]
-
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-}
-
-model GoatMating {
-  id                   Int      @id @default(autoincrement())
-  goatId               Int
-  goat                 Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
-  matingDate           DateTime
-  expectedDeliveryDate DateTime
-  createdAt            DateTime @default(now())
-}
-
-model GoatVaccine {
-  id          Int      @id @default(autoincrement())
-  goatId      Int
-  goat        Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
-  name        String
-  date        DateTime
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-}
-
-model GoatNote {
-  id        Int      @id @default(autoincrement())
-  goatId    Int
-  goat      Goat     @relation(fields: [goatId], references: [id], onDelete: Cascade)
-  date      DateTime
-  text      String   @db.Text
-  createdAt DateTime @default(now())
-}
-
-// ==========================================
-// 4. DAILY NOTES MODULE (பண்ணை தினசரி குறிப்புகள்)
-// ==========================================
-
-model DailyNote {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @default(now())
-  title     String
-  content   String   @db.Text
-  category  String?  // எ.கா: தீவனம், பால் விற்பனை, மருத்துவம்
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
