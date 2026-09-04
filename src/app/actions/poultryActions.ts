@@ -3,26 +3,37 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
+// ==========================================
 // 1. அனைத்து கோழிகளின் பட்டியலை பெற (தாய்/குஞ்சு உறவுகளுடன்)
+// ==========================================
 export async function getHens() {
   try {
-    return await prisma.hen.findMany({
+    const hens = await prisma.hen.findMany({
       include: {
-        incubations: true,
-        vaccinations: true,
-        notes: true,
+        incubations: {
+          orderBy: { startDate: 'desc' },
+        },
+        vaccinations: {
+          orderBy: { date: 'desc' },
+        },
+        notes: {
+          orderBy: { date: 'desc' },
+        },
         mother: true,
         chicks: true,
       },
       orderBy: { id: 'desc' },
     });
+    return { success: true, data: hens };
   } catch (error) {
-    console.error('Error fetching hens:', error);
-    return [];
+    console.error('கோழிகளின் பட்டியலை எடுப்பதில் பிழை:', error);
+    return { success: false, error: 'கோழிகளின் பட்டியலை பெற முடியவில்லை' };
   }
 }
 
+// ==========================================
 // 2. புதிய கோழி / குஞ்சு சேர்க்க
+// ==========================================
 export async function addHen(data: {
   name: string;
   type: 'HEN' | 'CHICK';
@@ -44,15 +55,21 @@ export async function addHen(data: {
     });
 
     revalidatePath('/poultry');
-    return newHen;
+    return { success: true, data: newHen };
   } catch (error) {
-    console.error('Error adding hen:', error);
-    throw new Error('Failed to add hen');
+    console.error('கோழியை சேர்ப்பதில் பிழை:', error);
+    return { success: false, error: 'கோழியை சேர்க்க முடியவில்லை' };
   }
 }
 
-// 3. அடைகாத்தல் (Incubation) பதிவு சேர்க்க (21 நாட்கள் அடைகாக்கும் காலம்)
-export async function addIncubation(henId: number, startDate: string, eggCount: number) {
+// ==========================================
+// 3. அடைகாத்தல் (Incubation) பதிவு சேர்க்க (21 நாட்கள்)
+// ==========================================
+export async function addIncubation(
+  henId: number,
+  startDate: string,
+  eggCount: number
+) {
   try {
     const start = new Date(startDate);
     const expectedHatchDate = new Date(start);
@@ -68,14 +85,16 @@ export async function addIncubation(henId: number, startDate: string, eggCount: 
     });
 
     revalidatePath('/poultry');
-    return newRecord;
+    return { success: true, data: newRecord };
   } catch (error) {
-    console.error('Error adding incubation:', error);
-    throw new Error('Failed to add incubation record');
+    console.error('அடைகாத்தல் பதிவை சேர்ப்பதில் பிழை:', error);
+    return { success: false, error: 'அடைகாத்தல் பதிவை சேர்க்க முடியவில்லை' };
   }
 }
 
+// ==========================================
 // 4. தடுப்பூசி பதிவு சேர்க்க
+// ==========================================
 export async function addPoultryVaccination(
   henId: number,
   name: string,
@@ -93,15 +112,21 @@ export async function addPoultryVaccination(
     });
 
     revalidatePath('/poultry');
-    return newVaccine;
+    return { success: true, data: newVaccine };
   } catch (error) {
-    console.error('Error adding poultry vaccination:', error);
-    throw new Error('Failed to add vaccination');
+    console.error('தடுப்பூசி பதிவை சேர்ப்பதில் பிழை:', error);
+    return { success: false, error: 'தடுப்பூசி பதிவை சேர்க்க முடியவில்லை' };
   }
 }
 
-// 5. குறிப்பு சேர்க்க
-export async function addPoultryNote(henId: number, date: string, text: string) {
+// ==========================================
+// 5. குறிப்பு (Note) சேர்க்க
+// ==========================================
+export async function addPoultryNote(
+  henId: number,
+  date: string,
+  text: string
+) {
   try {
     const newNote = await prisma.poultryNote.create({
       data: {
@@ -112,14 +137,16 @@ export async function addPoultryNote(henId: number, date: string, text: string) 
     });
 
     revalidatePath('/poultry');
-    return newNote;
+    return { success: true, data: newNote };
   } catch (error) {
-    console.error('Error adding poultry note:', error);
-    throw new Error('Failed to add note');
+    console.error('குறிப்பை சேர்ப்பதில் பிழை:', error);
+    return { success: false, error: 'குறிப்பை சேர்க்க முடியவில்லை' };
   }
 }
 
+// ==========================================
 // 6. குஞ்சை பெரிய கோழியாக மாற்ற (HEN <-> CHICK)
+// ==========================================
 export async function updateHenType(henId: number, type: 'HEN' | 'CHICK') {
   try {
     const updated = await prisma.hen.update({
@@ -128,14 +155,53 @@ export async function updateHenType(henId: number, type: 'HEN' | 'CHICK') {
     });
 
     revalidatePath('/poultry');
-    return updated;
+    return { success: true, data: updated };
   } catch (error) {
-    console.error('Error updating hen type:', error);
-    throw new Error('Failed to update hen type');
+    console.error('கோழியின் வகையை மாற்றுவதில் பிழை:', error);
+    return { success: false, error: 'கோழியின் வகையை மாற்ற முடியவில்லை' };
   }
 }
 
-// 7. கோழியை நீக்க
+// ==========================================
+// 7. கோழியின் விவரங்களை புதுப்பிக்க (Update Hen Details)
+// ==========================================
+export async function updateHenDetails(
+  henId: number,
+  data: {
+    name?: string;
+    type?: 'HEN' | 'CHICK';
+    birthDate?: string;
+    source?: 'BORN_HERE' | 'PURCHASED';
+    photoUrl?: string;
+    motherId?: number | null;
+  }
+) {
+  try {
+    const updatedHen = await prisma.hen.update({
+      where: { id: Number(henId) },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.type && { type: data.type }),
+        ...(data.birthDate && { birthDate: new Date(data.birthDate) }),
+        ...(data.source && { source: data.source }),
+        ...(data.photoUrl !== undefined && { photoUrl: data.photoUrl }),
+        ...(data.motherId !== undefined && {
+          motherId: data.motherId ? Number(data.motherId) : null,
+        }),
+      },
+    });
+
+    revalidatePath('/poultry');
+    return { success: true, data: updatedHen };
+  } catch (error) {
+    console.error('கோழி விவரங்களை புதுப்பிப்பதில் பிழை:', error);
+    return { success: false, error: 'கோழி விவரங்களை புதுப்பிக்க முடியவில்லை' };
+  }
+}
+
+// ==========================================
+// 8. கோழியை நீக்க (Delete Hen)
+// ==========================================
 export async function deleteHen(henId: number) {
   try {
     const deleted = await prisma.hen.delete({
@@ -143,14 +209,16 @@ export async function deleteHen(henId: number) {
     });
 
     revalidatePath('/poultry');
-    return deleted;
+    return { success: true, data: deleted };
   } catch (error) {
-    console.error('Error deleting hen:', error);
-    throw new Error('Failed to delete hen');
+    console.error('கோழியை நீக்குவதில் பிழை:', error);
+    return { success: false, error: 'கோழியை நீக்க முடியவில்லை' };
   }
 }
 
-// 8. அடைகாத்தல் பதிவை நீக்க (DELETE INCUBATION)
+// ==========================================
+// 9. அடைகாத்தல் பதிவை நீக்க (Delete Incubation)
+// ==========================================
 export async function deleteIncubation(incubationId: number) {
   try {
     const deleted = await prisma.incubation.delete({
@@ -158,14 +226,16 @@ export async function deleteIncubation(incubationId: number) {
     });
 
     revalidatePath('/poultry');
-    return deleted;
+    return { success: true, data: deleted };
   } catch (error) {
-    console.error('Error deleting incubation:', error);
-    throw new Error('Failed to delete incubation');
+    console.error('அடைகாத்தல் பதிவை நீக்குவதில் பிழை:', error);
+    return { success: false, error: 'அடைகாத்தல் பதிவை நீக்க முடியவில்லை' };
   }
 }
 
-// 9. தடுப்பூசி பதிவை நீக்க (DELETE VACCINATION)
+// ==========================================
+// 10. தடுப்பூசி பதிவை நீக்க (Delete Vaccination)
+// ==========================================
 export async function deletePoultryVaccination(vaccineId: number) {
   try {
     const deleted = await prisma.poultryVaccine.delete({
@@ -173,14 +243,47 @@ export async function deletePoultryVaccination(vaccineId: number) {
     });
 
     revalidatePath('/poultry');
-    return deleted;
+    return { success: true, data: deleted };
   } catch (error) {
-    console.error('Error deleting poultry vaccination:', error);
-    throw new Error('Failed to delete vaccination');
+    console.error('தடுப்பூசி பதிவை நீக்குவதில் பிழை:', error);
+    return { success: false, error: 'தடுப்பூசி பதிவை நீக்க முடியவில்லை' };
   }
 }
+// ==========================================
+// கோழி விவரங்கள் மற்றும் புகைப்படத்தை எடிட் செய்ய (Edit Hen Details & Photo)
+// ==========================================
+export async function editHen(
+  henId: number,
+  data: {
+    name: string;
+    birthDate: string;
+    source: 'BORN_HERE' | 'PURCHASED';
+    photoUrl?: string | null;
+    motherId?: number | null;
+  }
+) {
+  try {
+    const updatedHen = await prisma.hen.update({
+      where: { id: Number(henId) },
+      data: {
+        name: data.name,
+        birthDate: new Date(data.birthDate),
+        source: data.source,
+        photoUrl: data.photoUrl || null,
+        motherId: data.motherId ? Number(data.motherId) : null,
+      },
+    });
 
-// 10. குறிப்பை நீக்க (DELETE NOTE)
+    revalidatePath('/poultry');
+    return { success: true, data: updatedHen };
+  } catch (error) {
+    console.error('கோழி விவரங்களை திருத்துவதில் பிழை:', error);
+    return { success: false, error: 'விவரங்களை புதுப்பிக்க முடியவில்லை' };
+  }
+}
+// ==========================================
+// 11. குறிப்பை நீக்க (Delete Note)
+// ==========================================
 export async function deletePoultryNote(noteId: number) {
   try {
     const deleted = await prisma.poultryNote.delete({
@@ -188,9 +291,9 @@ export async function deletePoultryNote(noteId: number) {
     });
 
     revalidatePath('/poultry');
-    return deleted;
+    return { success: true, data: deleted };
   } catch (error) {
-    console.error('Error deleting poultry note:', error);
-    throw new Error('Failed to delete note');
+    console.error('குறிப்பை நீக்குவதில் பிழை:', error);
+    return { success: false, error: 'குறிப்பை நீக்க முடியவில்லை' };
   }
 }

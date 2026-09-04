@@ -16,9 +16,9 @@ import {
   deleteIncubation,
   deletePoultryVaccination,
   deletePoultryNote,
+  updateHenDetails,
 } from "@/app/actions/poultryActions";
 
-// --- TYPES & INTERFACES ---
 interface EggIncubation {
   id: number;
   startDate: string | Date | number | null | undefined;
@@ -52,26 +52,32 @@ interface Poultry {
   notes: GeneralNote[];
 }
 
-// --- MAIN REACT COMPONENT ---
 export default function PoultryPage() {
   const [activeTab, setActiveTab] = useState<"HEN" | "CHICK">("HEN");
   const [selectedBird, setSelectedBird] = useState<Poultry | null>(null);
   
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditBirdModalOpen, setIsEditBirdModalOpen] = useState(false);
   const [isIncubationModalOpen, setIsIncubationModalOpen] = useState(false);
   const [isVaccineModalOpen, setIsVaccineModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const [isChickHatchModalOpen, setIsChickHatchModalOpen] = useState(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
 
-  // Form States
+  // Form States - Add New
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"HEN" | "CHICK">("HEN");
   const [newBirthDate, setNewBirthDate] = useState("");
   const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
   const [selectedMotherForNew, setSelectedMotherForNew] = useState<number | "">("");
   const [photoBase64, setPhotoBase64] = useState<string>("");
+
+  // Form States - Edit Bird Details
+  const [editName, setEditName] = useState("");
+  const [editBirthDate, setEditBirthDate] = useState("");
+  const [editSource, setEditSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
+  const [editPhotoBase64, setEditPhotoBase64] = useState<string>("");
 
   // Multiple Chicks Hatch State
   const [chicksCount, setChicksCount] = useState<number>(1);
@@ -101,13 +107,24 @@ export default function PoultryPage() {
 
   async function loadBirds() {
     try {
-      const rawData = (await getHens()) as unknown as Array<{
+      const rawData = (await getHens()) as unknown as {
+        success?: boolean;
+        data?: Array<{
+          id: number; name: string; type: Poultry["type"]; photoUrl: string | null;
+          birthDate: Poultry["birthDate"]; source: Poultry["source"]; motherId: number | null;
+          incubations?: EggIncubation[]; vaccinations?: Vaccination[]; notes?: GeneralNote[];
+          mother?: { name: string } | null;
+        }>;
+      } | Array<{
         id: number; name: string; type: Poultry["type"]; photoUrl: string | null;
         birthDate: Poultry["birthDate"]; source: Poultry["source"]; motherId: number | null;
         incubations?: EggIncubation[]; vaccinations?: Vaccination[]; notes?: GeneralNote[];
         mother?: { name: string } | null;
       }>;
-      const data: Poultry[] = (rawData || []).map((bird) => ({
+
+      const list = Array.isArray(rawData) ? rawData : (rawData?.data || []);
+
+      const data: Poultry[] = list.map((bird) => ({
         ...bird,
         motherId: bird.motherId || undefined,
         motherName: bird.mother?.name,
@@ -115,6 +132,7 @@ export default function PoultryPage() {
         vaccinations: bird.vaccinations || [],
         notes: bird.notes || [],
       }));
+
       setBirds(data);
       setSelectedBird((previous) => previous ? data.find((bird) => bird.id === previous.id) || null : null);
     } catch (error) {
@@ -161,12 +179,16 @@ export default function PoultryPage() {
     };
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPhotoBase64(reader.result as string);
+        if (isEdit) {
+          setEditPhotoBase64(reader.result as string);
+        } else {
+          setPhotoBase64(reader.result as string);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -208,6 +230,32 @@ export default function PoultryPage() {
       await loadBirds();
     } catch (error) {
       console.error("Error converting chick to hen:", error);
+    }
+  };
+
+  const handleOpenEditBirdModal = () => {
+    if (!selectedBird) return;
+    setEditName(selectedBird.name);
+    setEditBirthDate(formatDateValue(selectedBird.birthDate));
+    setEditSource(selectedBird.source);
+    setEditPhotoBase64(selectedBird.photoUrl || "");
+    setIsEditBirdModalOpen(true);
+  };
+
+  const handleUpdateBirdDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBird || !editName) return;
+    try {
+      await updateHenDetails(selectedBird.id, {
+        name: editName,
+        birthDate: editBirthDate,
+        source: editSource,
+        photoUrl: editPhotoBase64 || undefined,
+      });
+      setIsEditBirdModalOpen(false);
+      await loadBirds();
+    } catch (error) {
+      console.error("Error updating hen details:", error);
     }
   };
 
@@ -302,22 +350,8 @@ export default function PoultryPage() {
   const handleDeleteIncubation = async (incId: number) => {
     if (!selectedBird) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deleteIncubation(incId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
-      setBirds((prevBirds) =>
-        prevBirds.map((bird) =>
-          bird.id === selectedBird.id
-            ? { ...bird, incubations: bird.incubations.filter((i) => i.id !== incId) }
-            : bird
-        )
-      );
-
-      // 3. Keep selectedBird synchronized
-      setSelectedBird((prev) =>
-        prev ? { ...prev, incubations: prev.incubations.filter((i) => i.id !== incId) } : null
-      );
+      await loadBirds();
     } catch (error) {
       console.error("Error deleting incubation:", error);
     }
@@ -346,22 +380,8 @@ export default function PoultryPage() {
   const handleDeleteVaccine = async (vacId: number) => {
     if (!selectedBird) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deletePoultryVaccination(vacId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
-      setBirds((prevBirds) =>
-        prevBirds.map((bird) =>
-          bird.id === selectedBird.id
-            ? { ...bird, vaccinations: bird.vaccinations.filter((v) => v.id !== vacId) }
-            : bird
-        )
-      );
-
-      // 3. Keep selectedBird synchronized
-      setSelectedBird((prev) =>
-        prev ? { ...prev, vaccinations: prev.vaccinations.filter((v) => v.id !== vacId) } : null
-      );
+      await loadBirds();
     } catch (error) {
       console.error("Error deleting vaccine:", error);
     }
@@ -390,22 +410,8 @@ export default function PoultryPage() {
   const handleDeleteNote = async (noteId: number) => {
     if (!selectedBird) return;
     try {
-      // 1. Call the server action to persist deletion in the database
       await deletePoultryNote(noteId);
-      
-      // 2. Update local state immediately so it stays deleted on refresh
-      setBirds((prevBirds) =>
-        prevBirds.map((bird) =>
-          bird.id === selectedBird.id
-            ? { ...bird, notes: bird.notes.filter((n) => n.id !== noteId) }
-            : bird
-        )
-      );
-
-      // 3. Keep selectedBird synchronized
-      setSelectedBird((prev) =>
-        prev ? { ...prev, notes: prev.notes.filter((n) => n.id !== noteId) } : null
-      );
+      await loadBirds();
     } catch (error) {
       console.error("Error deleting note:", error);
     }
@@ -418,19 +424,18 @@ export default function PoultryPage() {
       className="min-h-screen bg-cover bg-center bg-no-repeat bg-fixed font-sans relative w-full overflow-x-hidden"
       style={{ backgroundImage: "url('/CHICK.png')" }}
     >
-      {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px] pointer-events-none" />
 
       <div className="relative z-10 min-h-screen p-[3vw] sm:p-6 lg:p-8">
         
-        {/* Top Header Banner - Green Curved Box */}
+        {/* Top Header Banner */}
         <div className="max-w-7xl mx-auto bg-emerald-950/85 backdrop-blur-md border border-emerald-800/50 rounded-[3vw] sm:rounded-2xl p-[4vw] sm:p-6 text-white shadow-xl flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-[3vw] sm:gap-4 mb-[3vw] sm:mb-6">
           <div>
             <h1 className="text-[5vw] sm:text-2xl md:text-3xl font-bold flex items-center gap-[2vw] sm:gap-3 text-emerald-400">
               <Heart className="w-[6vw] h-[6vw] sm:w-7 sm:h-7 fill-emerald-500 text-emerald-500 shrink-0" /> <span>கோழிகள் மேலாண்மை</span>
             </h1>
             <p className="text-[2.6vw] sm:text-xs md:text-sm mt-1 leading-relaxed text-emerald-200/80">
-              அடைகாத்தல் கணக்கு (23 நாட்கள்), தடுப்பூசி & கோழிக்குஞ்சுகள் (Amma Koli Name) பதிவு
+              அடைகாத்தல் கணக்கு (23 நாட்கள்), தடுப்பூசி & கோழிக்குஞ்சுகள் பதிவு
             </p>
           </div>
 
@@ -525,10 +530,18 @@ export default function PoultryPage() {
                   </div>
                   
                   <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                    {/* EDIT BIRD BUTTON */}
+                    <button
+                      onClick={handleOpenEditBirdModal}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all shadow-sm"
+                    >
+                      <Edit className="w-4 h-4"/> திருத்த (Edit)
+                    </button>
+
                     {selectedBird.type === "CHICK" && (
                       <button
                         onClick={() => handleConvertToHen(selectedBird.id)}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all"
                       >
                         <ArrowRightLeft className="w-4 h-4"/> பெரிய கோழியாக மாற்று
                       </button>
@@ -536,7 +549,7 @@ export default function PoultryPage() {
 
                     <button
                       onClick={() => setIsRemoveModalOpen(true)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-2 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all"
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-2.5 py-1.5 rounded-lg text-[2.5vw] sm:text-xs font-semibold transition-all"
                     >
                       <Trash2 className="w-4 h-4"/> நீக்கு
                     </button>
@@ -770,7 +783,6 @@ export default function PoultryPage() {
                 </div>
               </div>
             ) : (
-              /* Center Placeholder matching RM Farm World design */
               <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-emerald-100 p-[8vw] sm:p-12 text-center text-emerald-900/80 shadow-xl flex flex-col items-center justify-center min-h-[260px] sm:min-h-[350px]">
                 <Activity className="w-10 h-10 sm:w-12 sm:h-12 mb-3 text-emerald-500 animate-pulse"/>
                 <p className="text-[3.2vw] sm:text-base font-semibold leading-relaxed max-w-sm">
@@ -780,6 +792,73 @@ export default function PoultryPage() {
             )}
           </div>
         </div>
+
+        {/* FULL EDIT MODAL: NAME, PHOTO, DATE, & SOURCE */}
+        {isEditBirdModalOpen && selectedBird && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200">
+              <div className="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 className="text-lg font-bold text-emerald-950">விவரங்கள் திருத்துதல் (Edit Details)</h3>
+                <button onClick={() => setIsEditBirdModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+              </div>
+              <form onSubmit={handleUpdateBirdDetails} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">கோழியின் பெயர் / Tag No</label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full border rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">புகைப்படம் மாற்றுதல்</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
+                      <Upload className="w-4 h-4 text-emerald-700"/>
+                      <span className="text-xs text-emerald-800 font-semibold">புதிய படம் பதிவேற்றவும்</span>
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                    </label>
+                    {editPhotoBase64 && (
+                      <img src={editPhotoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">தேதி</label>
+                    <input
+                      type="date"
+                      required
+                      value={editBirthDate}
+                      onChange={(e) => setEditBirthDate(e.target.value)}
+                      className="w-full border rounded-xl p-2.5 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">மூலம்</label>
+                    <select
+                      value={editSource}
+                      onChange={(e) => setEditSource(e.target.value as "BORN_HERE" | "PURCHASED")}
+                      className="w-full border rounded-xl p-2.5 text-sm bg-white"
+                    >
+                      <option value="BORN_HERE">பண்ணையில் பொரித்தவை</option>
+                      <option value="PURCHASED">வாங்கப்பட்டது</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
+                  புதுப்பிக்கவும் (Save Changes)
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Modal: Add or Edit Note */}
         {isNoteModalOpen && (
@@ -848,7 +927,7 @@ export default function PoultryPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-xs text-emerald-800 font-semibold">படத்தை பதிவேற்றவும்</span>
-                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} className="hidden" />
                     </label>
                     {photoBase64 && (
                       <img src={photoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -914,7 +993,7 @@ export default function PoultryPage() {
           </div>
         )}
 
-        {/* Modal: Chicks Hatch Registration Yes */}
+        {/* Modal: Chicks Hatch Registration */}
         {isChickHatchModalOpen && selectedBird && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200 max-h-[90vh] overflow-y-auto">
