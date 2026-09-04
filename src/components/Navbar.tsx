@@ -31,7 +31,7 @@ export default function Navbar() {
               width={40}
               height={40}
               priority
-              className="w-8 h-8 sm:w-10 sm:h-10 aspect-square object-cover drop-shadow-sm"
+              className="w-8 h-8 sm:w-10 sm:h-10 aspect-square rounded-full object-cover drop-shadow-sm"
             />
             <span className="text-sm sm:text-base md:text-lg font-black tracking-wide text-white whitespace-nowrap">
               RM Farm World
