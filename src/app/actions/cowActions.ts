@@ -105,7 +105,13 @@ export async function updateCattle(
 ) {
   return await prisma.cattle.update({
     where: { id },
-    data,
+    data: {
+      name: data.name,
+      type: data.type,
+      birthDate: new Date(data.birthDate),
+      source: data.source,
+      photoUrl: data.photoUrl || null,
+    },
   });
 }
 export async function addNote(cattleId: number, date: string, text: string) {
