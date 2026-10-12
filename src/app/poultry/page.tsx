@@ -55,6 +55,7 @@ interface Poultry {
 export default function PoultryPage() {
   const [activeTab, setActiveTab] = useState<"HEN" | "CHICK">("HEN");
   const [selectedBird, setSelectedBird] = useState<Poultry | null>(null);
+  const [isSubmittingBird, setIsSubmittingBird] = useState(false);
   
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -244,18 +245,23 @@ export default function PoultryPage() {
 
   const handleUpdateBirdDetails = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBird || !editName) return;
+    if (!selectedBird || !editName || isSubmittingBird) return;
     try {
-      await updateHenDetails(selectedBird.id, {
+      setIsSubmittingBird(true);
+      const result = await updateHenDetails(selectedBird.id, {
         name: editName,
         birthDate: editBirthDate,
         source: editSource,
         photoUrl: editPhotoBase64 || undefined,
       });
+      if (!result.success) throw new Error(result.error || "Unable to update hen details");
       setIsEditBirdModalOpen(false);
       await loadBirds();
     } catch (error) {
       console.error("Error updating hen details:", error);
+      alert("கோழியின் விவரங்களை புதுப்பிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.");
+    } finally {
+      setIsSubmittingBird(false);
     }
   };
 
@@ -799,7 +805,7 @@ export default function PoultryPage() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl border border-emerald-200">
               <div className="flex justify-between items-center border-b pb-3 mb-4">
                 <h3 className="text-lg font-bold text-emerald-950">விவரங்கள் திருத்துதல் (Edit Details)</h3>
-                <button onClick={() => setIsEditBirdModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+                <button disabled={isSubmittingBird} onClick={() => setIsEditBirdModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
               </div>
               <form onSubmit={handleUpdateBirdDetails} className="space-y-4">
                 <div>
@@ -819,7 +825,7 @@ export default function PoultryPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-xs text-emerald-800 font-semibold">புதிய படம் பதிவேற்றவும்</span>
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" disabled={isSubmittingBird} />
                     </label>
                     {editPhotoBase64 && (
                       <img src={editPhotoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -852,8 +858,9 @@ export default function PoultryPage() {
                   </div>
                 </div>
 
-                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
-                  புதுப்பிக்கவும் (Save Changes)
+                <button type="submit" disabled={isSubmittingBird} className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed">
+                  {isSubmittingBird && <span aria-hidden="true" className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{isSubmittingBird ? "புதுப்பிக்கப்படுகிறது..." : "புதுப்பிக்கவும் (Save Changes)"}</span>
                 </button>
               </form>
             </div>
