@@ -68,6 +68,7 @@ export default function CowPage() {
   const [newBirthDate, setNewBirthDate] = useState("");
   const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
   const [photoBase64, setPhotoBase64] = useState<string>("");
+  const [isSavingCattle, setIsSavingCattle] = useState(false);
 
   const [calfName, setCalfName] = useState("");
   const [calfBirthDate, setCalfBirthDate] = useState(new Date().toISOString().split("T")[0]);
@@ -143,14 +144,51 @@ export default function CowPage() {
     };
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    try {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoBase64(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      const imageDataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Unable to read image"));
+        reader.readAsDataURL(file);
+      });
+
+      const image = new Image();
+      image.src = imageDataUrl;
+      await image.decode();
+
+      const maxDimensionScale = Math.min(1, 600 / image.width, 600 / image.height);
+      let compressedImage: Blob | null = null;
+      for (let dimensionScale = 1; dimensionScale >= 0.2; dimensionScale *= 0.8) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * maxDimensionScale * dimensionScale));
+        canvas.height = Math.max(1, Math.round(image.height * maxDimensionScale * dimensionScale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Unable to process image");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        for (let quality = 0.7; quality >= 0.3; quality -= 0.1) {
+          compressedImage = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, "image/jpeg", quality)
+          );
+          if (!compressedImage || compressedImage.size <= 100 * 1024) break;
+        }
+        if (!compressedImage || compressedImage.size <= 100 * 1024) break;
+      }
+      if (!compressedImage || compressedImage.size > 100 * 1024) {
+        throw new Error("Unable to compress image below 100 KB");
+      }
+
+      const compressedReader = new FileReader();
+      compressedReader.onload = () => setPhotoBase64(compressedReader.result as string);
+      compressedReader.onerror = () => alert("படத்தை செயலாக்க முடியவில்லை. வேறு படத்தைத் தேர்ந்தெடுக்கவும்.");
+      compressedReader.readAsDataURL(compressedImage);
+    } catch (error) {
+      console.error("Error processing cattle image:", error);
+      alert("படத்தை செயலாக்க முடியவில்லை. வேறு படத்தைத் தேர்ந்தெடுக்கவும்.");
     }
   };
 
@@ -222,10 +260,11 @@ export default function CowPage() {
 
   const handleSaveOrUpdateCattle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName) return;
+    if (!newName || isSavingCattle) return;
     const today = new Date().toISOString().split("T")[0];
 
     try {
+      setIsSavingCattle(true);
       if (editingCattleId) {
         await updateCattle(editingCattleId, {
           name: newName,
@@ -252,6 +291,9 @@ export default function CowPage() {
       await loadData();
     } catch (error) {
       console.error("Error saving or updating cattle:", error);
+      alert("தரவை புதுப்பிக்க முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.");
+    } finally {
+      setIsSavingCattle(false);
     }
   };
 
@@ -894,8 +936,8 @@ export default function CowPage() {
                     className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
-                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md">
-                  {editingCattleId ? "விவரங்களை புதுப்பி" : "சேமிக்க"}
+                <button type="submit" disabled={isSavingCattle} className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md disabled:cursor-wait disabled:opacity-60">
+                  {isSavingCattle ? "சேமிக்கிறது..." : editingCattleId ? "விவரங்களை புதுப்பி" : "சேமிக்க"}
                 </button>
               </form>
             </div>

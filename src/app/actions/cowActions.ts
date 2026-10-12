@@ -103,16 +103,23 @@ export async function updateCattle(
     photoUrl?: string;
   }
 ) {
-  return await prisma.cattle.update({
-    where: { id },
-    data: {
-      name: data.name,
-      type: data.type,
-      birthDate: new Date(data.birthDate),
-      source: data.source,
-      photoUrl: data.photoUrl || null,
-    },
-  });
+  try {
+    const updatedCattle = await prisma.cattle.update({
+      where: { id: Number(id) },
+      data: {
+        name: data.name,
+        type: data.type,
+        birthDate: new Date(data.birthDate),
+        source: data.source,
+        photoUrl: data.photoUrl || null,
+      },
+    });
+    revalidatePath('/cow');
+    return updatedCattle;
+  } catch (error) {
+    console.error('Error updating cattle:', error);
+    throw new Error('Failed to update cattle');
+  }
 }
 export async function addNote(cattleId: number, date: string, text: string) {
   try {
