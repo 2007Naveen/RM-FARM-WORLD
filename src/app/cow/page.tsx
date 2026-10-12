@@ -69,6 +69,7 @@ export default function CowPage() {
   const [newSource, setNewSource] = useState<"BORN_HERE" | "PURCHASED">("BORN_HERE");
   const [photoBase64, setPhotoBase64] = useState<string>("");
   const [isSavingCattle, setIsSavingCattle] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState("");
 
   const [calfName, setCalfName] = useState("");
   const [calfBirthDate, setCalfBirthDate] = useState(new Date().toISOString().split("T")[0]);
@@ -148,19 +149,14 @@ export default function CowPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    let imageObjectUrl = "";
     try {
-      const reader = new FileReader();
-      const imageDataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("Unable to read image"));
-        reader.readAsDataURL(file);
-      });
-
+      imageObjectUrl = URL.createObjectURL(file);
       const image = new Image();
-      image.src = imageDataUrl;
+      image.src = imageObjectUrl;
       await image.decode();
 
-      const maxDimensionScale = Math.min(1, 600 / image.width, 600 / image.height);
+      const maxDimensionScale = Math.min(1, 400 / image.width, 400 / image.height);
       let compressedImage: Blob | null = null;
       for (let dimensionScale = 1; dimensionScale >= 0.2; dimensionScale *= 0.8) {
         const canvas = document.createElement("canvas");
@@ -183,12 +179,17 @@ export default function CowPage() {
       }
 
       const compressedReader = new FileReader();
-      compressedReader.onload = () => setPhotoBase64(compressedReader.result as string);
-      compressedReader.onerror = () => alert("படத்தை செயலாக்க முடியவில்லை. வேறு படத்தைத் தேர்ந்தெடுக்கவும்.");
-      compressedReader.readAsDataURL(compressedImage);
+      const compressedBase64 = await new Promise<string>((resolve, reject) => {
+        compressedReader.onload = () => resolve(compressedReader.result as string);
+        compressedReader.onerror = () => reject(new Error("Unable to read compressed image"));
+        compressedReader.readAsDataURL(compressedImage);
+      });
+      setPhotoBase64(compressedBase64);
     } catch (error) {
       console.error("Error processing cattle image:", error);
       alert("படத்தை செயலாக்க முடியவில்லை. வேறு படத்தைத் தேர்ந்தெடுக்கவும்.");
+    } finally {
+      if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
     }
   };
 
@@ -247,10 +248,13 @@ export default function CowPage() {
     setNewName(cattle.name);
     setNewType(cattle.type);
     
-    // Safely parse Date object or String to YYYY-MM-DD
-    const formattedBirthDate = cattle.birthDate 
-      ? new Date(cattle.birthDate).toISOString().split('T')[0] 
-      : '';
+    let formattedBirthDate = "";
+    if (cattle.birthDate) {
+      const date = new Date(cattle.birthDate);
+      if (!Number.isNaN(date.getTime())) {
+        formattedBirthDate = date.toISOString().split("T")[0];
+      }
+    }
       
     setNewBirthDate(formattedBirthDate);
     setNewSource(cattle.source);
@@ -265,6 +269,7 @@ export default function CowPage() {
 
     try {
       setIsSavingCattle(true);
+      setSubmitMessage(editingCattleId ? "புதுப்பிக்கப்படுகிறது..." : "சேமிக்கப்படுகிறது...");
       if (editingCattleId) {
         await updateCattle(editingCattleId, {
           name: newName,
@@ -294,6 +299,7 @@ export default function CowPage() {
       alert("தரவை புதுப்பிக்க முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.");
     } finally {
       setIsSavingCattle(false);
+      setSubmitMessage("");
     }
   };
 
@@ -871,7 +877,7 @@ export default function CowPage() {
                 <h3 className="text-[4vw] sm:text-lg font-bold text-emerald-950">
                   {editingCattleId ? "மாடு/கன்று விவரங்களை மாற்று" : "புதிய விலங்கு சேர்க்க"}
                 </h3>
-                <button onClick={() => { setIsAddModalOpen(false); setEditingCattleId(null); }}>
+                <button disabled={isSavingCattle} onClick={() => { setIsAddModalOpen(false); setEditingCattleId(null); }}>
                   <X className="w-5 h-5 text-stone-400 hover:text-stone-700"/>
                 </button>
               </div>
@@ -894,7 +900,7 @@ export default function CowPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-[2.8vw] sm:text-xs text-emerald-800 font-semibold">படத்தை பதிவேற்றவும்</span>
-                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={isSavingCattle} />
                     </label>
                     {photoBase64 && (
                       <img src={photoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -936,8 +942,15 @@ export default function CowPage() {
                     className="w-full border rounded-xl p-2.5 text-[3vw] sm:text-sm text-stone-800"
                   />
                 </div>
-                <button type="submit" disabled={isSavingCattle} className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm hover:bg-emerald-800 transition-all shadow-md disabled:cursor-wait disabled:opacity-60">
-                  {isSavingCattle ? "சேமிக்கிறது..." : editingCattleId ? "விவரங்களை புதுப்பி" : "சேமிக்க"}
+                <button type="submit" disabled={isSavingCattle} className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold py-3 rounded-xl text-[3.2vw] sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed">
+                  {isSavingCattle ? (
+                    <>
+                      <span aria-hidden="true" className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span role="status" aria-live="polite">{submitMessage}</span>
+                    </>
+                  ) : (
+                    <span>{editingCattleId ? "விவரங்களை புதுப்பி" : "சேமிக்க"}</span>
+                  )}
                 </button>
               </form>
             </div>
