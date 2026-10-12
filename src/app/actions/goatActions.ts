@@ -182,21 +182,32 @@ export async function updateGoatType(goatId: number, type: 'GOAT' | 'KID') {
 export async function updateGoatDetails(
   id: number,
   data: {
-    name?: string;
-    type?: "GOAT" | "KID";
-    birthDate?: string;
-    source?: "BORN_HERE" | "PURCHASED";
+    name: string;
+    type: "GOAT" | "KID";
+    birthDate: string;
+    source: "BORN_HERE" | "PURCHASED";
     photoUrl?: string;
     motherId?: number;
   }
 ) {
-  return await prisma.goat.update({
-    where: { id },
-    data: {
-      ...data,
-      birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-    },
-  });
+  try {
+    const updatedGoat = await prisma.goat.update({
+      where: { id: Number(id) },
+      data: {
+        name: data.name,
+        type: data.type,
+        birthDate: new Date(data.birthDate),
+        source: data.source,
+        photoUrl: data.photoUrl || null,
+        motherId: data.motherId || null,
+      },
+    });
+    revalidatePath('/goat');
+    return updatedGoat;
+  } catch (error) {
+    console.error('Goat update error:', error);
+    throw error;
+  }
 }
 
 // 10. ஆட்டை நீக்க

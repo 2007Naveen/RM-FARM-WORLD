@@ -117,8 +117,8 @@ export async function updateCattle(
     revalidatePath('/cow');
     return updatedCattle;
   } catch (error) {
-    console.error('Error updating cattle:', error);
-    throw new Error('Failed to update cattle');
+    console.error('Cow update error:', error);
+    throw error;
   }
 }
 export async function addNote(cattleId: number, date: string, text: string) {

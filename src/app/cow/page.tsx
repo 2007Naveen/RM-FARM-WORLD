@@ -1,7 +1,7 @@
 'use client';
 
 import './cow.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Heart, Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock
@@ -70,6 +70,8 @@ export default function CowPage() {
   const [photoBase64, setPhotoBase64] = useState<string>("");
   const [isSavingCattle, setIsSavingCattle] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [calfName, setCalfName] = useState("");
   const [calfBirthDate, setCalfBirthDate] = useState(new Date().toISOString().split("T")[0]);
@@ -92,6 +94,19 @@ export default function CowPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const showToast = (text: string, type: "success" | "error" = "success") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage({ text, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 3000);
+  };
 
   async function loadData() {
     setLoading(true);
@@ -278,6 +293,7 @@ export default function CowPage() {
           source: newSource,
           photoUrl: photoBase64 || undefined
         });
+        showToast("விவரங்கள் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!", "success");
       } else {
         await addCattle({
           name: newName,
@@ -286,6 +302,7 @@ export default function CowPage() {
           source: newSource,
           photoUrl: photoBase64 || undefined
         });
+        showToast("புதிய பதிவு வெற்றிகரமாக சேர்க்கப்பட்டது!", "success");
       }
 
       setNewName("");
@@ -296,7 +313,7 @@ export default function CowPage() {
       await loadData();
     } catch (error) {
       console.error("Error saving or updating cattle:", error);
-      alert("தரவை புதுப்பிக்க முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.");
+      showToast("புதுப்பிப்பதில் பிழை ஏற்பட்டது! மீண்டும் முயற்சிக்கவும்.", "error");
     } finally {
       setIsSavingCattle(false);
       setSubmitMessage("");
@@ -465,6 +482,19 @@ export default function CowPage() {
       className="min-h-screen bg-cover bg-center bg-fixed font-sans relative w-full overflow-x-hidden"
       style={{ backgroundImage: "url('/cow-bg.png')" }}
     >
+      {toastMessage && (
+        <div className="pointer-events-none fixed inset-x-3 top-4 z-[10000] flex justify-center sm:inset-x-auto sm:right-5 sm:justify-end">
+          <div
+            role={toastMessage.type === "error" ? "alert" : "status"}
+            aria-live={toastMessage.type === "error" ? "assertive" : "polite"}
+            className={`max-w-full rounded-xl border px-4 py-3 text-sm font-bold text-white shadow-xl ${
+              toastMessage.type === "success" ? "border-emerald-400 bg-emerald-600" : "border-red-400 bg-red-600"
+            }`}
+          >
+            {toastMessage.text}
+          </div>
+        </div>
+      )}
       <div className="min-h-screen bg-black/20 backdrop-blur-[2px] p-[3vw] sm:p-6 lg:p-8">
         
         {/* Banner Header */}

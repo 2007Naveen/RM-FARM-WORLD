@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { 
   Plus, Calendar as CalendarIcon, Syringe, ShieldAlert, 
   Activity, X, Upload, ArrowRightLeft, Trash2, Edit, FileText, Clock, Loader2
@@ -60,6 +60,9 @@ function GoatPage() {
   const [activeTab, setActiveTab] = useState<"GOAT" | "KID">("GOAT");
   const [selectedGoat, setSelectedGoat] = useState<Goat | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -111,6 +114,19 @@ function GoatPage() {
   useEffect(() => {
     loadGoats();
   }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const showToast = (text: string, type: "success" | "error" = "success") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage({ text, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 3000);
+  };
 
   async function loadGoats() {
     setIsLoading(true);
@@ -209,18 +225,52 @@ function GoatPage() {
     };
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (isEdit) {
-          setEditPhotoBase64(reader.result as string);
-        } else {
-          setPhotoBase64(reader.result as string);
+    if (!file) return;
+
+    let imageObjectUrl = "";
+    try {
+      imageObjectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.src = imageObjectUrl;
+      await image.decode();
+
+      const maxDimensionScale = Math.min(1, 400 / image.width, 400 / image.height);
+      let compressedImage: Blob | null = null;
+      for (let dimensionScale = 1; dimensionScale >= 0.2; dimensionScale *= 0.8) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * maxDimensionScale * dimensionScale));
+        canvas.height = Math.max(1, Math.round(image.height * maxDimensionScale * dimensionScale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Unable to process image");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        for (let quality = 0.7; quality >= 0.3; quality -= 0.1) {
+          compressedImage = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, "image/jpeg", quality)
+          );
+          if (!compressedImage || compressedImage.size <= 100 * 1024) break;
         }
-      };
-      reader.readAsDataURL(file);
+        if (!compressedImage || compressedImage.size <= 100 * 1024) break;
+      }
+      if (!compressedImage || compressedImage.size > 100 * 1024) {
+        throw new Error("Unable to compress image below 100 KB");
+      }
+
+      const reader = new FileReader();
+      const compressedBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Unable to read compressed image"));
+        reader.readAsDataURL(compressedImage);
+      });
+      if (isEdit) setEditPhotoBase64(compressedBase64);
+      else setPhotoBase64(compressedBase64);
+    } catch (error) {
+      console.error("Error processing goat image:", error);
+      alert("படத்தை செயலாக்க முடியவில்லை. வேறு படத்தைத் தேர்ந்தெடுக்கவும்.");
+    } finally {
+      if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
     }
   };
 
@@ -263,7 +313,10 @@ function GoatPage() {
   const handleOpenEditModal = (goat: Goat) => {
     setEditName(goat.name);
     setEditType(goat.type);
-    setEditBirthDate(formatDateValue(goat.birthDate));
+    const birthDate = goat.birthDate ? new Date(goat.birthDate) : null;
+    setEditBirthDate(birthDate && !Number.isNaN(birthDate.getTime())
+      ? birthDate.toISOString().split("T")[0]
+      : "");
     setEditSource(goat.source);
     setEditMotherId(goat.motherId || "");
     setEditPhotoBase64(goat.photoUrl || "");
@@ -272,8 +325,9 @@ function GoatPage() {
 
   const handleUpdateGoat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedGoat || !editName) return;
+    if (!selectedGoat || !editName || isSubmitting) return;
     try {
+      setIsSubmitting(true);
       await updateGoatDetails(selectedGoat.id, {
         name: editName,
         type: editType,
@@ -284,8 +338,12 @@ function GoatPage() {
       });
       setIsEditGoatModalOpen(false);
       await loadGoats();
+      showToast("விவரங்கள் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!", "success");
     } catch (error) {
       console.error("Error updating goat details:", error);
+      showToast("புதுப்பிப்பதில் பிழை ஏற்பட்டது! மீண்டும் முயற்சிக்கவும்.", "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -305,8 +363,9 @@ function GoatPage() {
 
   const handleAddGoat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName) return;
+    if (!newName || isSubmitting) return;
     try {
+      setIsSubmitting(true);
       await addGoat({
         name: newName,
         type: newType,
@@ -321,8 +380,12 @@ function GoatPage() {
       setSelectedMotherForNew("");
       setIsAddModalOpen(false);
       await loadGoats();
+      showToast("புதிய பதிவு வெற்றிகரமாக சேர்க்கப்பட்டது!", "success");
     } catch (error) {
       console.error("Error adding goat:", error);
+      showToast("பதிவைச் சேர்ப்பதில் பிழை ஏற்பட்டது! மீண்டும் முயற்சிக்கவும்.", "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -498,6 +561,19 @@ function GoatPage() {
       className="min-h-screen bg-cover bg-center bg-no-repeat bg-fixed font-sans relative w-full overflow-x-hidden"
       style={{ backgroundImage: "url('/goats-bg.jpg')" }}
     >
+      {toastMessage && (
+        <div className="pointer-events-none fixed inset-x-3 top-4 z-[10000] flex justify-center sm:inset-x-auto sm:right-5 sm:justify-end">
+          <div
+            role={toastMessage.type === "error" ? "alert" : "status"}
+            aria-live={toastMessage.type === "error" ? "assertive" : "polite"}
+            className={`max-w-full rounded-xl border px-4 py-3 text-sm font-bold text-white shadow-xl ${
+              toastMessage.type === "success" ? "border-emerald-400 bg-emerald-600" : "border-red-400 bg-red-600"
+            }`}
+          >
+            {toastMessage.text}
+          </div>
+        </div>
+      )}
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] pointer-events-none" />
 
       <div className="relative z-10 min-h-screen p-[3vw] sm:p-6 lg:p-8">
@@ -866,7 +942,7 @@ function GoatPage() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
               <div className="flex justify-between items-center border-b pb-3 mb-4">
                 <h3 className="text-lg font-bold text-emerald-950">ஆட்டின் விவரங்களை திருத்து</h3>
-                <button onClick={() => setIsEditGoatModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+                <button disabled={isSubmitting} onClick={() => setIsEditGoatModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
               </div>
               <form onSubmit={handleUpdateGoat} className="space-y-4">
                 <div>
@@ -886,7 +962,7 @@ function GoatPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-xs text-emerald-800 font-semibold">புதிய படம் பதிவேற்ற</span>
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" disabled={isSubmitting} />
                     </label>
                     {editPhotoBase64 && (
                       <img src={editPhotoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -944,8 +1020,9 @@ function GoatPage() {
                     className="w-full border rounded-xl p-2.5 text-sm"
                   />
                 </div>
-                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
-                  மாற்றங்களை சேமிக்க
+                <button type="submit" disabled={isSubmitting} className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+                  {isSubmitting && <span aria-hidden="true" className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{isSubmitting ? "புதுப்பிக்கப்படுகிறது..." : "மாற்றங்களை சேமிக்க"}</span>
                 </button>
               </form>
             </div>
@@ -1035,7 +1112,7 @@ function GoatPage() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
               <div className="flex justify-between items-center border-b pb-3 mb-4">
                 <h3 className="text-lg font-bold text-emerald-950">புதிய ஆடு / குட்டி சேர்க்க</h3>
-                <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
+                <button disabled={isSubmitting} onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-gray-400"/></button>
               </div>
               <form onSubmit={handleAddGoat} className="space-y-4">
                 <div>
@@ -1056,7 +1133,7 @@ function GoatPage() {
                     <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 p-3 rounded-xl cursor-pointer transition-all">
                       <Upload className="w-4 h-4 text-emerald-700"/>
                       <span className="text-xs text-emerald-800 font-semibold">படத்தை பதிவேற்றவும்</span>
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} className="hidden" />
+                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} className="hidden" disabled={isSubmitting} />
                     </label>
                     {photoBase64 && (
                       <img src={photoBase64} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-emerald-300" />
@@ -1114,8 +1191,9 @@ function GoatPage() {
                     className="w-full border rounded-xl p-2.5 text-sm"
                   />
                 </div>
-                <button type="submit" className="w-full bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm hover:bg-emerald-800 transition-all">
-                  சேமிக்க
+                <button type="submit" disabled={isSubmitting} className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+                  {isSubmitting && <span aria-hidden="true" className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{isSubmitting ? "சேமிக்கப்படுகிறது..." : "சேமிக்க"}</span>
                 </button>
               </form>
             </div>
